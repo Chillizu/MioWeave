@@ -1,0 +1,67 @@
+<!doctype html><meta charset="utf-8"><title>MioWeave callback unknown DOM shape</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div class="ds-toggle-button">Search</div><textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="conversation"></div>
+<script>
+(()=>{
+ const storage={};
+ window.chrome={runtime:{id:'unknown-callback-fixture',async sendMessage(m){
+  if(m.type==='WEBMCP_CONFIG_GET')return {ok:true,config:{enabled:true,hideCallbacks:true,autoRunReadOnly:false,autoSendCallbacks:false}};
+  if(m.type==='WEBMCP_BRIDGE_CHECK')return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools:[{name:'status',inputSchema:{type:'object',properties:{}}}]};
+  if(m.type==='WEBMCP_CALL')throw Error('No real calls allowed');return {ok:false};
+ }},storage:{local:{async get(k){return {[k]:storage[k]}},async set(p){Object.assign(storage,p)}}}};
+ const root=document.querySelector('#conversation');
+ const make=(id,tool,result,{withClose=true}={})=>'[[WEBMCP_RESULT]]\n'+JSON.stringify({id,tool,ok:true,result})+(withClose?'\n[[/WEBMCP_RESULT]]':'');
+ const snap=m=>({hidden:m.row.classList.contains('webmcp-callback-hidden'),rowHidden:m.row.classList.contains('webmcp-callback-row-hidden'),projection:!!m.row.querySelector('.webmcp-callback-projection')||m.row.classList.contains('webmcp-callback-projection'),display:getComputedStyle(m.row).display,phase:callStates.get(m.id)?.phase});
+ const add=(id,text,virtual=true)=>{
+  const row=document.createElement('div');if(virtual)row.dataset.virtualListItemKey=id;
+  const frame=document.createElement('section');frame.className='mystery-layout-x3';
+  const bubble=document.createElement('div');bubble.className='bubble-rewrite-v4';
+  const start=text.indexOf('\n');
+  const prefix=document.createElement('span');prefix.textContent=text.slice(0,start+1);
+  const json=document.createElement('span');json.textContent=text.slice(start+1);
+  bubble.append(prefix,json);
+  const actions=document.createElement('div');actions.innerHTML='<button type="button">Copy</button><button type="button">Edit</button>';
+  frame.append(bubble,actions);row.append(frame);root.append(row);return {row,bubble,id};
+ };
+ window.results={};
+ setTimeout(()=>{
+  const single={id:'one_status',tool:'status',arguments:{}};
+  const childA={id:'batch_child_A',tool:'status',arguments:{}};
+  const childB={id:'batch_child_B',tool:'status',arguments:{}};
+  for(const call of [single,childA,childB]) {
+   const card=createToolCard(call);card.dataset.webmcpPhase='result-ready';
+   document.querySelector('#conversation').append(card);
+  }
+  registerCallMeta({id:'batch_f81e',tool:'webmcp.batch',arguments:{}});
+  registerCallMeta({id:'clipped_status',tool:'status',arguments:{}});
+  const clippedCard=createToolCard({id:'clipped_status',tool:'status',arguments:{}});
+  root.append(clippedCard);
+  rememberCallState('clipped_status','submitted',{ok:true,result:{kind:'status'}});
+  registerCallMeta({id:'no_bound',tool:'status',arguments:{}});
+  window.noBound=add('no-bound',make('no_bound','status',{kind:'status'}),false);
+  window.single=add('single-row',make('one_status','status',{kind:'status',name:'miodesk'}));
+  window.batch=add('batch-row',make('batch_f81e','webmcp.batch',{calls:[{id:'batch_child_A',tool:'status',ok:true,result:{kind:'status'}},{id:'batch_child_B',tool:'status',ok:true,result:{kind:'status'}}],allOk:true}));
+  window.clipped=add('clipped-row',make('clipped_status','status',{output:'A'.repeat(400)},{withClose:false}).slice(0,220));
+  window.unrelated=add('unknown-row',make('unknown_tool','status',{kind:'status'}));
+  window.quote=add('quote-row','User quoted this: '+make('one_status','status',{kind:'status'}));
+  window.thinking=add('thinking-row',make('one_status','status',{kind:'status'}));
+  window.thinking.row.classList.add('ds-think-content');
+ },200);
+ setTimeout(()=>{
+  results.initial={single:snap(single),batch:snap(batch),clipped:snap(clipped),noBound:snap(noBound),rootVisible:getComputedStyle(root).display!=='none',unrelated:snap(unrelated),quote:snap(quote),thinking:snap(thinking)};
+  state.hideCallbacks=false;scanCallbacks();
+ },750);
+ setTimeout(()=>{
+  results.disabled={single:snap(single),batch:snap(batch),clipped:snap(clipped)};
+  state.hideCallbacks=true;scanCallbacks();
+  // DeepSeek reuses an already hidden row for unrelated text.
+  single.bubble.textContent='Not a tool callback.';
+ },1250);
+ setTimeout(()=>{
+  results.recycled={single:snap(single),batch:snap(batch),clipped:snap(clipped),unrelated:snap(unrelated)};
+  document.body.dataset.unknownCallback=JSON.stringify(results);
+ },2200);
+})();
+</script><script src="../extension/content.js"></script>

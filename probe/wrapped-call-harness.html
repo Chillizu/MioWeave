@@ -1,0 +1,70 @@
+<!doctype html><meta charset="utf-8"><title>WebMCP nested DeepSeek message wrapper test</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div class="ds-toggle-button">Search</div>
+<textarea placeholder="Message DeepSeek"></textarea><div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div class="ds-virtual-list-visible-items" id="conversation"></div>
+<script>
+(()=>{
+ const tools=[{name:"exec_command",description:"Execute a command",inputSchema:{type:"object",properties:{cmd:{type:"string"}},required:["cmd"]}}];
+ const memory={};let executed=0;
+ window.testCallCount=()=>executed;
+ window.chrome={runtime:{id:"wrapped-tool-test",async sendMessage(message){
+  if(message.type==="WEBMCP_CONFIG_GET")return {ok:true,config:{enabled:true,autoRunReadOnly:false,autoSendCallbacks:false,hideCallbacks:true}};
+  if(message.type==="WEBMCP_BRIDGE_CHECK")return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools};
+  if(message.type==="WEBMCP_CALL"){executed++;throw Error("Probe must never execute a privileged command")}
+  return {ok:false};
+ }},storage:{local:{async get(key){return {[key]:memory[key]}},async set(patch){Object.assign(memory,patch)}}}};
+ const parent=document.querySelector("#conversation");
+ const makeMessage=(id,wrapper)=>
+  {const row=document.createElement("div");
+   row.className="row";row.dataset.virtualListItemKey=id;
+   const message=document.createElement("div");message.className="ds-message";
+   if(wrapper){const div=document.createElement("div");div.className="assistant-reply-wrapper";message.append(div);}
+   row.append(message);parent.append(row);
+   return wrapper?message.querySelector(".assistant-reply-wrapper"):message;
+  };
+ const call=(id,cmd)=>JSON.stringify({id,tool:"exec_command",arguments:{cmd}});
+ const m1=makeMessage("wrapped-exec",true);
+ const body=document.createElement("div");
+ body.className="ds-markdown";
+ body.innerHTML='<p>工具都正常，再演示一下：</p><p>[[WEBMCP_CALL]]</p>'
+  +'<p>'+call("call_exec_1",'echo "hello from webmcp" && uname -a && pwd')+'</p>'
+  +'<p>[[/WEBMCP_CALL]]</p>';
+ m1.append(body);
+ const m2=makeMessage("wrapped-code",true);
+ const sub=document.createElement("div");sub.className="nested-markdown-holder";
+ m2.append(sub);
+ const body2=document.createElement("div");body2.className="ds-markdown";
+ const callString='[[WEBMCP_CALL]]'+call("call_exec_2","printf hello")+'[[/WEBMCP_CALL]]';
+ body2.innerHTML='<p>Second example:</p><pre><code>'+callString.replace('"id"','<span>"id"</span>')+'</code></pre>';
+ sub.append(body2);
+ const m3=makeMessage("reasoning",true);
+ const think=document.createElement("div");think.className="ds-think-content";
+ think.innerHTML='<div class="ds-markdown"><p>'+call("fake_in_thought","exit 1")+'</p><p>[[WEBMCP_CALL]]</p><p>'+call("fake_with_marker","exit 1")+'</p><p>[[/WEBMCP_CALL]]</p></div>';
+ m3.append(think);
+ const m4=makeMessage("malformed",true);
+ const malformed=document.createElement("div");malformed.className="ds-markdown";
+ malformed.textContent='[[WEBMCP_CALL]]{"id":"bad","tool":"exec_command","arguments":{"cmd": unquoted}}[[/WEBMCP_CALL]]';
+ m4.append(malformed);
+ setTimeout(()=>{
+  const warning=malformed.nextElementSibling?.classList.contains("webmcp-call-warning");
+  malformed.textContent='[[WEBMCP_CALL]]'+call("recovered","printf hello")+'[[/WEBMCP_CALL]]';
+  setTimeout(()=>{
+   const cards=[...document.querySelectorAll(".webmcp-card")];
+   document.body.dataset.wrapped=JSON.stringify({
+    cardIds:cards.map(c=>c.dataset.webmcpId).sort(),
+    toolNames:cards.map(c=>c.querySelector(".webmcp-tool")?.textContent),
+    originalHidden:getComputedStyle(body).display==="none",
+    beforeProse:!!m1.querySelector(".webmcp-call-prose"),
+    nestedSource:body2.classList.contains("webmcp-source"),
+    thinkIgnored:!document.querySelector('.webmcp-card[data-webmcp-id="fake_with_marker"]'),
+    malformedWarning:warning,
+    recovered:!!m4.querySelector('.webmcp-card[data-webmcp-id="recovered"]'),
+    warningCleared:!m4.querySelector(".webmcp-call-warning"),
+    noExecution:executed===0
+   });
+  },450);
+ },650);
+})();
+</script>
+<script src="../extension/content.js"></script>

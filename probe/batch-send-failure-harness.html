@@ -1,0 +1,40 @@
+<!doctype html><meta charset="utf-8"><title>WebMCP callback transport failure</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div class="ds-toggle-button">Search</div><textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="messages"></div>
+<script>
+(()=>{
+  const cache={};let calls=0;
+  window.mockCalls=()=>calls;
+  const tools=["status","list"].map(name=>({name,annotations:{readOnlyHint:true},inputSchema:{type:"object",properties:{}}}));
+  window.chrome={runtime:{id:"batch-failure-test",async sendMessage(message){
+    if(message.type==="WEBMCP_CONFIG_GET")return {ok:true,config:{enabled:true,autoRunReadOnly:true,autoSendCallbacks:true,callbackDelayMs:0,hideCallbacks:true}};
+    if(message.type==="WEBMCP_BRIDGE_CHECK")return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools};
+    if(message.type==="WEBMCP_CALL"){calls++;return {ok:true,result:{structuredContent:{kind:message.tool}}};}
+    return {ok:false};
+  }},storage:{local:{async get(k){return {[k]:cache[k]}},async set(o){Object.assign(cache,o)}}}};
+  setTimeout(()=>{
+    const msg=document.createElement("div");msg.className="ds-message";
+    const md=document.createElement("div");md.className="ds-markdown";
+    const mk=(id,tool)=>'[[WEBMCP_CALL]]'+JSON.stringify({id,tool,arguments:{}})+'[[/WEBMCP_CALL]]';
+    md.textContent=mk("failure_a","status")+'\n'+mk("failure_b","list");
+    msg.append(md);document.getElementById("messages").append(msg);
+  },250);
+  setTimeout(()=>{
+    const view=document.querySelector(".webmcp-batch-view");
+    const button=view?.querySelector(".webmcp-batch-actions button");
+    document.body.dataset.failure=JSON.stringify({
+      count:calls,
+      button:button?.textContent||"",
+      disabled:!!button?.disabled,
+      complete:[...view?.querySelectorAll(".webmcp-card")||[]].every(x=>x._webmcpPayload?.ok===true),
+      controlsVisible:!!view?.querySelector(".webmcp-batch-actions:not([hidden])")
+    });
+  },3300);
+})();
+</script>
+<script src="../extension/content.js"></script>
+<script>
+sendPreparedCallback=async()=>{throw Error("Simulated DeepSeek composer outage")};
+</script>

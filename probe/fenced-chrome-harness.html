@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8"><title>MioWeave fenced tool display</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div class="ds-toggle-button">Search</div><textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="messages"></div>
+<script>
+(()=>{
+ const store={};
+ window.chrome={runtime:{id:"fence-ui-test",async sendMessage(m){
+  if(m.type==="WEBMCP_CONFIG_GET")return {ok:true,config:{enabled:true,autoRunReadOnly:false,autoSendCallbacks:false,localToolLabel:"MioDesk",approvalMode:"ask"}};
+  if(m.type==="WEBMCP_BRIDGE_CHECK")return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools:[{name:"status",annotations:{readOnlyHint:true},inputSchema:{type:"object",properties:{}}},{name:"list",annotations:{readOnlyHint:true},inputSchema:{type:"object",properties:{}}}]};
+  return {ok:false};
+ }},storage:{local:{async get(k){return {[k]:store[k]}},async set(v){Object.assign(store,v)}}}};
+ const root=document.querySelector("#messages");
+ const make=(id,names)=>{
+  const outer=document.createElement("div");
+  outer.className="ds-message";
+  const md=document.createElement("div");md.className="ds-markdown";
+  const before=document.createElement("p");before.textContent="Before tools";md.append(before);
+  const wrapper=document.createElement("div");wrapper.className="md-code-block";
+  const head=document.createElement("div");head.className="md-code-block-header";
+  // In production DeepSeek can change these localized/tool-specific labels;
+  // their words should never determine whether an empty code shell survives.
+  head.innerHTML='<span>Plain text (UTF-8)</span><button type="button">Copy as rich text</button><button type="button">Download .txt</button><span>Options ⋯</span>';
+  const pre=document.createElement("pre"),code=document.createElement("code");
+  code.textContent=names.map((name,j)=>'[[WEBMCP_CALL]]\n'+JSON.stringify({id:id+j,tool:name,arguments:{}})+'\n[[/WEBMCP_CALL]]').join('\n\n');
+  pre.append(code);wrapper.append(head,pre);md.append(wrapper);
+  const after=document.createElement("p");after.textContent="After tools";md.append(after);
+  const retained=document.createElement("pre"), plainCode=document.createElement("code");
+  plainCode.textContent='genuine independent code block';retained.append(plainCode);md.append(retained);
+  outer.append(md);root.append(outer);return outer;
+ };
+ const single=make("single",["status"]);
+ const multi=make("multi",["status","list"]);
+ setTimeout(()=>{
+  const views=[...root.querySelectorAll(".webmcp-call-view")];
+  const visible=views.map(v=>v.innerText||v.textContent||"");
+  document.body.dataset.fence=JSON.stringify({
+   count:views.length,
+   cardCount:root.querySelectorAll(".webmcp-card").length,
+   noHeaders:views.every(v=>!v.querySelector(".md-code-block") && !v.querySelector(".md-code-block-header") && ![...v.querySelectorAll("pre")].some(p=>!p.textContent.trim())),
+   realCodePreserved:views.every(v=>[...v.querySelectorAll("pre")].some(p=>p.textContent.includes("genuine independent code block"))),
+   noChrome:visible.every(text=>!text.includes("Copy")&&!text.includes("Download")&&!text.includes("Plain text")&&!text.includes("Options ⋯")),
+   hasProse:visible.every(text=>text.includes("Before tools")&&text.includes("After tools")),
+   providers:[...root.querySelectorAll(".webmcp-tool-provider")].map(x=>x.textContent),
+   sourceHidden:getComputedStyle(single.querySelector(".ds-markdown")).display==="none",
+   viewHTML:views.map(v=>v.innerHTML.slice(0,950))
+  });
+ },1050);
+})();
+</script>
+<script src="../extension/content.js"></script>

@@ -1,0 +1,11 @@
+{
+  "name": "mioweave",
+  "private": true,
+  "version": "0.0.20",
+  "type": "module",
+  "scripts": {
+    "bridge": "node bridge/server.mjs",
+    "check": "node --check bridge/server.mjs && node --check extension/background.js && node --check extension/content.js && node --check extension/options.js",
+    "test:stability": "node probe/recovery-background-test.mjs && python3 probe/run-long-task-harness.py"
+  }
+}

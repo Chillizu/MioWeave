@@ -1,0 +1,167 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebMCP smoke harness</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div id="toolbar"><div><div class="ds-toggle-button">Search</div></div></div>
+<textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" tabindex="0" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="messages"></div>
+<script>
+(() => {
+  const memory = {};
+  window.chrome = window.chrome || {};
+  chrome.runtime = {
+    id:"webmcp-smoke",
+    async sendMessage(message) {
+      if (message.type === "WEBMCP_CONFIG_GET") {
+        return {ok:true,config:{
+          bridgeUrl:"http://127.0.0.1:8790",
+          bridgeTokenConfigured:true,
+          enabled:true,
+          autoRunReadOnly:true,
+          autoSendCallbacks:true,
+          hideCallbacks:true
+        }};
+      }
+      if (message.type === "WEBMCP_BRIDGE_CHECK") {
+        return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools};
+      }
+      if (message.type === "WEBMCP_CONFIG_SET") {
+        return {ok:true,config:message.config};
+      }
+      if (message.type === "WEBMCP_CALL") {
+        return {ok:true,result:{structuredContent:{
+          kind:"status",name:"miodesk",version:"test",platform:"linux/amd64"
+        }}};
+      }
+      return {ok:false,error:"unknown message"};
+    }
+  };
+  chrome.storage = {
+    local: {
+      async get(keys) {
+        if (typeof keys === "string") return {[keys]: memory[keys]};
+        const out = {};
+        for (const key of keys || []) if (key in memory) out[key] = memory[key];
+        return out;
+      },
+      async set(patch) { Object.assign(memory, patch); }
+    }
+  };
+
+  const tools = [{
+    name:"status",
+    description:"Return local status.",
+    inputSchema:{type:"object",properties:{}},
+    annotations:{readOnlyHint:true}
+  }];
+
+  const textarea = document.querySelector("textarea");
+  const button = document.querySelector('[role="button"]');
+  const messages = document.querySelector("#messages");
+
+  function appendUser(text) {
+    const message = document.createElement("div");
+    message.className = "ds-message";
+    const body = document.createElement("div");
+    body.className = "ds-collapsible-text";
+    body.textContent = text;
+    message.appendChild(body);
+    messages.appendChild(message);
+  }
+
+  function appendAssistant(text) {
+    const message = document.createElement("div");
+    message.className = "ds-message";
+    const markdown = document.createElement("div");
+    markdown.className = "ds-markdown";
+    markdown.textContent = text;
+    message.appendChild(markdown);
+    messages.appendChild(message);
+  }
+
+  button.addEventListener("click", () => {
+    const text = textarea.value;
+    if (!text) return;
+    textarea.value = "";
+    textarea.dispatchEvent(new Event("input", {bubbles:true}));
+    appendUser(text);
+
+    if (text.includes("[[WEBMCP_INIT]]")) {
+      setTimeout(() => appendAssistant(
+        '[[WEBMCP_CALL]]{"id":"call_smoke","tool":"status","arguments":{}}[[/WEBMCP_CALL]]'
+      ), 30);
+    } else if (text.includes("[[WEBMCP_RESULT]]")) {
+      setTimeout(() => appendAssistant("Smoke test complete."), 30);
+    }
+  });
+
+  setTimeout(() => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+    setter.call(textarea, "Check local status.");
+    textarea.dispatchEvent(new Event("input", {bubbles:true}));
+    button.click();
+  }, 250);
+
+  setTimeout(() => {
+    const card = document.querySelector(".webmcp-card");
+    const init = document.querySelector(".webmcp-init-projection");
+    const callback = document.querySelector(".webmcp-callback-hidden");
+    const initAfter = init ? getComputedStyle(init, "::after").content : "";
+    const firstFont = init ? getComputedStyle(init, "::after").fontSize : "";
+    // Simulate many user-message/virtual-list reconciliation passes; the
+    // visible ::after font must never be replaced by the hidden body's 0px.
+    for (let i = 0; i < 18; i += 1) reconcileVisibleUserProtocols();
+    const repeatedFont = init ? getComputedStyle(init, "::after").fontSize : "";
+    init?.style.setProperty("--webmcp-projection-font-size", "0px");
+    init?.style.setProperty("--webmcp-projection-line-height", "0px");
+    init?.style.setProperty("--webmcp-projection-color", "rgba(0, 0, 0, 0)");
+    reconcileVisibleUserProtocols(); // repair a projection corrupted by <=0.0.9
+    const repairedFont = init ? getComputedStyle(init, "::after").fontSize : "";
+    const repairedLineHeight = init ? getComputedStyle(init, "::after").lineHeight : "";
+    const repairedColor = init ? getComputedStyle(init, "::after").color : "";
+
+    const followUp = document.createElement("div");
+    followUp.className = "ds-message";
+    const followUpText = document.createElement("div");
+    followUpText.className = "ds-collapsible-text";
+    followUpText.textContent = "Second user message.";
+    followUp.appendChild(followUpText);
+    messages.appendChild(followUp);
+    reconcileVisibleUserProtocols();
+    const firstAfterFollowUp = init ? getComputedStyle(init, "::after").fontSize : "";
+
+    const example = document.createElement("div");
+    example.className = "ds-message";
+    const quoted = document.createElement("div");
+    quoted.className = "ds-collapsible-text";
+    quoted.textContent = 'Here is [[WEBMCP_RESULT]]{"id":"example","tool":"status","ok":true}[[/WEBMCP_RESULT]] in my own message';
+    example.appendChild(quoted);
+    messages.appendChild(example);
+    reconcileVisibleUserProtocols();
+
+    document.querySelector(".webmcp-settings-trigger")?.click();
+    const panel = document.querySelector(".webmcp-panel");
+    const reinit = panel?.querySelector(".webmcp-reinit");
+
+    document.body.dataset.smoke = JSON.stringify({
+      phase:card?.dataset.webmcpPhase || "",
+      state:card?.querySelector(".webmcp-state")?.textContent || "",
+      composer:textarea.value,
+      initProjected:!!init && getComputedStyle(init).fontSize === "0px",
+      initDisplay:init?.dataset.webmcpDisplay || "",
+      initAfter,
+      firstFont, repeatedFont, repairedFont, repairedLineHeight, repairedColor, firstAfterFollowUp,
+      secondUserVisible:getComputedStyle(followUpText).display !== "none",
+      normalUserUnmodified:!quoted.classList.contains("webmcp-text-projection") &&
+        !example.classList.contains("webmcp-callback-hidden"),
+      callbackHidden:!!callback && getComputedStyle(callback).display === "none",
+      reinitText:reinit?.textContent || "",
+      reinitNoWrap:reinit ? getComputedStyle(reinit).whiteSpace === "nowrap" : false,
+      reinitWidth:reinit?.getBoundingClientRect().width || 0,
+      final:[...document.querySelectorAll(".ds-markdown")].at(-1)?.textContent || ""
+    });
+  }, 3800);
+})();
+</script>
+<script src="../extension/content.js"></script>

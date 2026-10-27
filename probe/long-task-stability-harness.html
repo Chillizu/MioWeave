@@ -1,0 +1,90 @@
+<!doctype html><meta charset="utf-8"><title>MioWeave long task recovery and callback budget</title>
+<base href="/probe/"><link rel="stylesheet" href="../extension/styles.css">
+<div class="ds-toggle-button">Search</div><textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="messages"></div>
+<script>
+(()=>{
+ const params=new URLSearchParams(location.search);
+ const echo=params.get('echo')==='1';
+ // Synthetic saved-chat URL, without an external DeepSeek request.
+ history.replaceState(null,'','/a/chat/s/long-task-fixture-1'+location.search);
+ const recovery={};let calls=0,submitted=0;
+ if(params.get('unknown')==='1') {
+   const text=JSON.stringify({path:'a.txt'});
+   let hash=2166136261;
+   for(let i=0;i<text.length;i++){hash^=text.charCodeAt(i);hash=Math.imul(hash,16777619);}
+   recovery.long_c={tool:'edit',argsHash:(hash>>>0).toString(16).padStart(8,'0'),
+     phase:'running',payload:null,at:Date.now()};
+ }
+ window.fixtures={recovery,get calls(){return calls},get submitted(){return submitted}};
+ const tools=['status','exec_command','edit'].map(name=>({name,inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:name==='status'}}));
+ const memory={};
+ window.chrome={runtime:{id:'long-task-test',async sendMessage(message){
+  if(message.type==='WEBMCP_CONFIG_GET')return {ok:true,config:{enabled:true,approvalMode:'always',autoRunReadOnly:true,autoSendCallbacks:true,callbackDelayMs:0,hideCallbacks:true}};
+  if(message.type==='WEBMCP_BRIDGE_CHECK')return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools};
+  if(message.type==='WEBMCP_RECOVERY_LOAD')return {ok:true,records:{...recovery}};
+  if(message.type==='WEBMCP_RECOVERY_SAVE'){
+   recovery[message.callId]={...message.record,at:Date.now()};return {ok:true};
+  }
+  if(message.type==='WEBMCP_CALL'){
+   calls++;
+   if(message.tool==='exec_command')return {ok:true,result:{structuredContent:{exit_code:0,output:'A'.repeat(1024*1024),wall_time_seconds:1.5}}};
+   if(message.tool==='edit')return {ok:true,result:{structuredContent:{applied:1,files:[{path:'a.txt',diff:'test'}]}}};
+   return {ok:true,result:{structuredContent:{kind:'status',name:'miodesk'}}};
+  }
+  return {ok:false};
+ }},storage:{local:{async get(keys){return typeof keys==='string'?{[keys]:memory[keys]}:memory},async set(patch){Object.assign(memory,patch)}}}};
+ const list=document.getElementById('messages'),textarea=document.querySelector('textarea'),send=document.querySelector('.ds-button--primary');
+ window.makeCall=(id,tool,args={})=>'[[WEBMCP_CALL]]'+JSON.stringify({id,tool,arguments:args})+'[[/WEBMCP_CALL]]';
+ send.addEventListener('click',()=>{
+   const text=textarea.value.trim();if(!text)return;
+   submitted++;textarea.value='';textarea.dispatchEvent(new Event('input',{bubbles:true}));
+   if(echo){const msg=document.createElement('div');msg.className='ds-message';
+    const body=document.createElement('div');body.className='ds-collapsible-text';body.textContent=text;
+    msg.append(body);list.append(msg);}
+ });
+ const message=document.createElement('div');message.className='ds-message';
+ const markdown=document.createElement('div');markdown.className='ds-markdown';
+ markdown.innerHTML='<p>Task prelude</p><p>'+window.makeCall('long_a','status')+'</p>'+
+  '<p>'+window.makeCall('long_b','exec_command',{cmd:'safe sample'})+'</p>'+
+  '<p>'+window.makeCall('long_c','edit',{path:'a.txt'})+'</p><p>[[/WEBMCP_CALL]]</p><p>Task conclusion</p>';
+ message.append(markdown);
+ setTimeout(()=>list.append(message),650);
+ window.snapshot=()=>{
+  const view=list.querySelector('.webmcp-batch-view');
+  const cards=[...view?.querySelectorAll('.webmcp-card')||[]];
+  return {calls,submitted,statuses:cards.map(c=>c.querySelector('.webmcp-state').textContent),
+   phases:cards.map(c=>c.dataset.webmcpPhase),button:view?.querySelector('.webmcp-batch-actions button')?.textContent,
+   buttonHidden:!!view?.querySelector('.webmcp-batch-actions[hidden]'),
+   orphan:view?.textContent.includes('[[/WEBMCP_CALL]]'),
+   resultReady:cards.every(c=>!!c._webmcpPayload),
+   journalEntries:Object.keys(recovery).sort(),
+   persistedLarge:JSON.stringify(recovery).length};
+ };
+ window.simulateReload=async()=>{
+  const before=calls;
+  document.querySelectorAll('.webmcp-card').forEach(c=>c.closest('.webmcp-call-view')?.remove());
+  document.querySelectorAll('.webmcp-source').forEach(s=>{s.classList.remove('webmcp-source');delete s.dataset.webmcpCallId;});
+  callStates.clear();callMetas.clear();
+  await loadRecoveryState();
+  scanCalls();
+  return {before,after:calls,snapshot:window.snapshot()};
+ };
+ setTimeout(async()=>{
+  const before=window.snapshot();
+  const restored=await window.simulateReload();
+  document.body.dataset.recovery=JSON.stringify({before,restored});
+ },11000);
+ setTimeout(()=>{
+  const payload={ok:true,result:{structuredContent:{exit_code:0,output:'Z'.repeat(1024*1024)}}};
+  const one=resultText({id:'test_big',tool:'exec_command'},payload);
+  const batch=resultText({id:'test_batch',tool:'webmcp.batch'},
+   {ok:true,result:{calls:Array.from({length:3},(_,i)=>({id:'id'+i,tool:'exec_command',ok:true,result:payload.result}))}});
+  document.body.dataset.budget=JSON.stringify({single:one.length,batch:batch.length,
+   exitCode:JSON.parse(one.split('\n')[1]).result.metadata?.exit_code,
+   wasTruncated:JSON.parse(one.split('\n')[1]).result.mioweave_truncated});
+ },150);
+})();
+</script>
+<script src="../extension/content.js"></script>

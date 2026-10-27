@@ -1,0 +1,67 @@
+<!doctype html><meta charset="utf-8"><title>MioWeave alternate user-bubble callback markup</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div class="ds-toggle-button">Search</div><textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="messages"></div>
+<script>
+(()=>{
+ const memo={};
+ window.chrome={runtime:{id:'callback-dom-test',async sendMessage(m){
+  if(m.type==='WEBMCP_CONFIG_GET')return {ok:true,config:{enabled:true,hideCallbacks:true,autoRunReadOnly:false,autoSendCallbacks:false}};
+  if(m.type==='WEBMCP_BRIDGE_CHECK')return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools:[{name:'status',inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:true}}]};
+  if(m.type==='WEBMCP_CALL')throw Error('Must not execute real tools');
+  return {ok:false};
+ }},storage:{local:{async get(k){return {[k]:memo[k]}},async set(p){Object.assign(memo,p)}}}};
+ const root=document.querySelector('#messages');
+ function msg(text,clazz='ds-markdown'){
+  const row=document.createElement('div');row.className='ds-message';
+  const body=clazz?document.createElement('div'):row;
+  if(clazz)body.className=clazz;
+  body.textContent=text;
+  if(clazz)row.append(body);
+  root.append(row);
+  return {row,body};
+ }
+ const callText=(id)=>'[[WEBMCP_CALL]]'+JSON.stringify({id,tool:'status',arguments:{}})+'[[/WEBMCP_CALL]]';
+ const full=(id)=>'[[WEBMCP_RESULT]]\n'+JSON.stringify({id,tool:'status',ok:true,result:{structuredContent:{kind:'status',name:'miodesk'}}})+'\n[[/WEBMCP_RESULT]]\n\nContinue the previous task using this tool result.';
+ const compact=(id)=>'[[WEBMCP_RESULT]]\n'+JSON.stringify({id,tool:'status',ok:true,result:{structuredContent:{kind:'status',name:'miodesk'}}});
+ const snap=m=>({hidden:m.row.classList.contains('webmcp-callback-hidden'),projection:m.body.classList.contains('webmcp-callback-projection'),style:getComputedStyle(m.row).display,text:m.body.textContent.slice(0,80)});
+ window.data={};
+ setTimeout(()=>{
+  // Register known tool calls in actual assistant markup.
+  msg(callText('call_markdown'));
+  msg(callText('call_direct'));
+  msg(callText('call_preview'));
+  msg(callText('call_control'));
+ },170);
+ setTimeout(()=>{
+  window.markdown=msg(full('call_markdown'));
+  window.direct=msg(full('call_direct'),null);
+  const nativeFooter=document.createElement('div');nativeFooter.className='action-tray-v3';
+  nativeFooter.innerHTML='<button type="button">Copy</button><button type="button">Edit</button>';
+  window.direct.row.append(nativeFooter);
+  registerCallMeta({id:'call_preview',tool:'status',arguments:{}});
+  rememberCallState('call_preview','submitted',{ok:true,result:{kind:'status'}});
+  window.preview=msg(compact('call_preview'));
+  window.unrelated=msg(full('different_id'));
+  window.prose=msg('A user quote: '+full('call_markdown'));
+  window.other=msg('Hello from an ordinary user.');
+ },410);
+ setTimeout(()=>{
+  window.data.initial={markdown:snap(markdown),direct:snap(direct),preview:snap(preview),unrelated:snap(unrelated),prose:snap(prose),other:snap(other),previewPhase:callStates.get('call_preview')?.phase};
+  // This is a user-visible setting, not a mandatory policy: switching it off
+  // must restore the transport text on every kind of bubble.
+  state.hideCallbacks=false;scanCallbacks();
+ },1040);
+ setTimeout(()=>{
+  window.data.disabled={markdown:snap(markdown),direct:snap(direct),preview:snap(preview)};
+  state.hideCallbacks=true;scanCallbacks();
+  // DeepSeek may reuse the message for a new user utterance.
+  markdown.body.textContent='Ordinary replacement message.';
+ },1420);
+ setTimeout(()=>{
+  window.data.recycled={markdown:snap(markdown),direct:snap(direct),preview:snap(preview)};
+  document.body.dataset.alternateCallback=JSON.stringify(data);
+ },2030);
+})();
+</script><script src="../extension/content.js"></script>

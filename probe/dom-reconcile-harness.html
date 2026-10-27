@@ -1,0 +1,185 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebMCP DOM reconcile harness</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div id="toolbar-host">
+  <div class="toolbar-row" id="toolbar-old">
+    <div><div class="ds-toggle-button">Search</div></div>
+  </div>
+</div>
+<textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="messages"></div>
+<script>
+(() => {
+  const memory = {};
+  const tools = [{
+    name:"status",
+    description:"Return local status.",
+    inputSchema:{type:"object",properties:{}},
+    annotations:{readOnlyHint:true}
+  }];
+
+  window.chrome = {
+    runtime: {
+      id:"webmcp-reconcile-test",
+      async sendMessage(message) {
+        if (message.type === "WEBMCP_CONFIG_GET") {
+          return {ok:true,config:{
+            bridgeUrl:"http://127.0.0.1:8790",
+            bridgeTokenConfigured:true,
+            enabled:true,
+            autoRunReadOnly:false,
+            autoSendCallbacks:true,
+            hideCallbacks:true
+          }};
+        }
+        if (message.type === "WEBMCP_BRIDGE_CHECK") {
+          return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools};
+        }
+        if (message.type === "WEBMCP_CONFIG_SET") {
+          return {ok:true,config:message.config};
+        }
+        return {ok:false,error:"unsupported"};
+      }
+    },
+    storage: {
+      local: {
+        async get(keys) {
+          if (typeof keys === "string") return {[keys]:memory[keys]};
+          const out = {};
+          for (const key of keys || []) if (key in memory) out[key] = memory[key];
+          return out;
+        },
+        async set(patch) { Object.assign(memory, patch); }
+      }
+    }
+  };
+
+  const messages = document.querySelector("#messages");
+
+  function userMessage(text) {
+    const message = document.createElement("div");
+    message.className = "ds-message";
+    const body = document.createElement("div");
+    body.className = "ds-collapsible-text";
+    body.textContent = text;
+    message.appendChild(body);
+    messages.appendChild(message);
+    return message;
+  }
+
+  function assistantMessage(text) {
+    const message = document.createElement("div");
+    message.className = "ds-message";
+    const body = document.createElement("div");
+    body.className = "ds-markdown";
+    body.textContent = text;
+    message.appendChild(body);
+    messages.appendChild(message);
+    return message;
+  }
+
+  setTimeout(() => {
+    const init = [
+      "[[WEBMCP_INIT]]",
+      "WebMCP local tools are attached to this chat. schema=deadbeef",
+      "[[/WEBMCP_INIT]]",
+      "",
+      "hello from user"
+    ].join("\n");
+
+    userMessage(init);
+    userMessage(init);
+
+    const call = '[[WEBMCP_CALL]]{"id":"same_call","tool":"status","arguments":{}}[[/WEBMCP_CALL]]';
+    assistantMessage(call);
+    assistantMessage(call);
+
+    const result = [
+      "[[WEBMCP_RESULT]]",
+      '{"id":"same_call","tool":"status","ok":true,"result":{"structuredContent":{"kind":"status","name":"miodesk","version":"test","platform":"linux/amd64"}}}',
+      "[[/WEBMCP_RESULT]]",
+      "",
+      "Continue the previous task using this tool result."
+    ].join("\n");
+    userMessage(result);
+    userMessage(result);
+
+    const markerPayload = {
+      id:"marker_call",
+      tool:"read",
+      ok:true,
+      result:{
+        content:[{
+          type:"text",
+          text:"Protocol docs mention [[WEBMCP_RESULT]] and [[/WEBMCP_RESULT]] inside the tool payload."
+        }]
+      }
+    };
+    userMessage([
+      "[[WEBMCP_RESULT]]",
+      JSON.stringify(markerPayload),
+      "[[/WEBMCP_RESULT]]",
+      "",
+      "Continue the previous task using this tool result."
+    ].join("\n"));
+
+    const oldToolbar = document.querySelector("#toolbar-old");
+    oldToolbar.style.display = "none";
+    const fresh = document.createElement("div");
+    fresh.className = "toolbar-row";
+    fresh.id = "toolbar-new";
+    fresh.innerHTML = '<div><div class="ds-toggle-button">Search</div></div>';
+    document.querySelector("#toolbar-host").appendChild(fresh);
+  }, 250);
+
+  function snapshot() {
+    const cards = [...document.querySelectorAll(".webmcp-card")];
+    const initNodes = [...document.querySelectorAll(".webmcp-init-projection")];
+    const callbackHidden = [...document.querySelectorAll(".webmcp-callback-hidden")];
+    const controls = [...document.querySelectorAll(".webmcp-controls")];
+    const visibleInit = initNodes.filter(x => !x.classList.contains("webmcp-projection-duplicate"));
+    const callSources = [...document.querySelectorAll(".webmcp-source")];
+    const markerResult = [...document.querySelectorAll(".ds-collapsible-text")]
+      .find(x => x.dataset.webmcpResultId === "marker_call");
+    return {
+      cards:cards.length,
+      cardState:cards[0]?.querySelector(".webmcp-state")?.textContent || "",
+      initProjections:initNodes.length,
+      visibleInit:visibleInit.length,
+      legacyInitClean:document.querySelectorAll(".webmcp-init-clean").length,
+      callbackHidden:callbackHidden.length,
+      callbackSummary:document.querySelectorAll(".webmcp-callback-summary").length,
+      controls:controls.length,
+      controlsOnNew:controls[0]?.closest("#toolbar-new") != null,
+      callSources:callSources.length,
+      rawCallVisible:callSources.some(x => getComputedStyle(x).display !== "none"),
+      initDisplays:visibleInit.map(x => x.dataset.webmcpDisplay),
+      markerResultProjected:!!markerResult?.classList.contains("webmcp-callback-projection"),
+      markerResultDisplay:markerResult?.dataset.webmcpDisplay || "",
+      markerResultFont:markerResult ? getComputedStyle(markerResult).fontSize : ""
+    };
+  }
+
+  let beforeRemount = null;
+  setTimeout(() => {
+    beforeRemount = snapshot();
+
+    const card = document.querySelector(".webmcp-card");
+    card?.closest(".ds-message")?.remove();
+
+    const visibleInit = [...document.querySelectorAll(".webmcp-init-projection")]
+      .find(x => !x.classList.contains("webmcp-projection-duplicate"));
+    visibleInit?.closest(".ds-message")?.remove();
+  }, 900);
+
+  setTimeout(() => {
+    document.body.dataset.reconcile = JSON.stringify({
+      before:beforeRemount,
+      after:snapshot()
+    });
+  }, 1500);
+})();
+</script>
+<script src="../extension/content.js"></script>

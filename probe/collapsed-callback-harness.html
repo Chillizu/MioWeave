@@ -1,0 +1,70 @@
+<!doctype html><meta charset="utf-8"><title>MioWeave collapsed result callback</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div class="ds-toggle-button">Search</div>
+<textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="messages"></div>
+<script>
+(()=>{
+ const memory={};
+ window.chrome={runtime:{id:'collapsed-callback-test',async sendMessage(message){
+  if(message.type==='WEBMCP_CONFIG_GET')return {ok:true,config:{enabled:true,autoRunReadOnly:false,autoSendCallbacks:true,hideCallbacks:true}};
+  if(message.type==='WEBMCP_BRIDGE_CHECK')return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools:[{name:'exec_command',inputSchema:{type:'object',properties:{}},annotations:{readOnlyHint:false}}]};
+  if(message.type==='WEBMCP_CALL')throw new Error('Fixture must not execute local tools');
+  return {ok:false};
+ }},storage:{local:{async get(k){return {[k]:memory[k]}},async set(p){Object.assign(memory,p)}}}};
+ const container=document.querySelector('#messages');
+ function addMessage(content,role='user'){
+   const msg=document.createElement('div');msg.className='ds-message';
+   const body=document.createElement('div');body.className=role==='user'?'ds-collapsible-text':'ds-markdown';
+   body.textContent=content;msg.append(body);container.append(msg);return {msg,body};
+ }
+ const call={id:'call_1',tool:'exec_command',arguments:{cmd:'echo hello'}};
+ const payload={ok:true,result:{structuredContent:{exit_code:0,output:'long output '.repeat(3300)}}};
+ const snapshot=m=>({
+   hidden:m.msg.classList.contains('webmcp-callback-hidden'),
+   projected:m.body.classList.contains('webmcp-callback-projection'),
+   display:getComputedStyle(m.msg).display,
+   summary:m.body.dataset.webmcpDisplay||'',
+   textStart:m.body.textContent.slice(0,68)
+ });
+ window.results={};
+ setTimeout(()=>{
+   addMessage('[[WEBMCP_CALL]]'+JSON.stringify(call)+'[[/WEBMCP_CALL]]','assistant');
+ },200);
+ setTimeout(()=>{
+   // Known submitted callback, but DeepSeek's expanded message content is
+   // temporarily unavailable: the user bubble only renders the prefix.
+   registerCallMeta(call);
+   rememberCallState(call.id,'submitted',payload);
+   window.fullCallback=resultText(call,payload);
+   window.preview=addMessage(window.fullCallback.slice(0,220));
+   window.other=addMessage('[[WEBMCP_RESULT]]{"id":"unknown","tool":"exec_command","ok":true,"result":{');
+   window.spoof=addMessage('[[WEBMCP_RESULT]]{"id":"call_1","tool":"write","ok":true,"result":{');
+   window.example=addMessage('Here is an example: [[WEBMCP_RESULT]]{"id":"call_1","tool":"exec_command","ok":true}');
+ },550);
+ setTimeout(()=>{
+   results.initial={preview:snapshot(window.preview),unknown:snapshot(window.other),toolMismatch:snapshot(window.spoof),example:snapshot(window.example),
+     phase:callStates.get(call.id)?.phase};
+   // Complete message appears when the user expands the bubble: only then
+   // can its presence serve as a positive receipt.
+   window.preview.body.textContent=window.fullCallback;
+ },1050);
+ setTimeout(()=>{
+   results.expanded={preview:snapshot(window.preview),phase:callStates.get(call.id)?.phase};
+   // DeepSeek virtual list rebuilds the callback node as another preview.
+   window.preview.msg.remove();
+   window.remounted=addMessage(window.fullCallback.slice(0,220));
+ },1570);
+ setTimeout(()=>{
+   results.remounted={preview:snapshot(window.remounted),phase:callStates.get(call.id)?.phase};
+   // Reuse the same DOM node for ordinary chat content: presentation must go.
+   window.remounted.body.textContent='This is an ordinary user message after recycling.';
+ },2100);
+ setTimeout(()=>{
+   results.recycled={preview:snapshot(window.remounted),phase:callStates.get(call.id)?.phase};
+   document.body.dataset.collapsed=JSON.stringify(results);
+ },2700);
+})();
+</script>
+<script src="../extension/content.js"></script>

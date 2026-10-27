@@ -1,0 +1,15 @@
+# Local bridge credentials and runtime state (never commit)
+artifacts/*
+!artifacts/.gitkeep
+.env
+.env.*
+*.log
+*.pid
+node_modules/
+.DS_Store
+__pycache__/
+*.pyc
+*.zip
+*.crx
+*.pem
+*.key

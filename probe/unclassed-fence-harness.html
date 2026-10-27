@@ -1,0 +1,45 @@
+<!doctype html><meta charset="utf-8"><title>Unknown DeepSeek code-toolbar classes</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div class="ds-toggle-button">Search</div><textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="conversation"></div>
+<script>
+(()=>{
+ const mem={};
+ window.chrome={runtime:{id:'unclassed-fence-test',async sendMessage(m){
+  if(m.type==='WEBMCP_CONFIG_GET')return {ok:true,config:{enabled:true,hideCallbacks:true,autoRunReadOnly:false,autoSendCallbacks:false}};
+  if(m.type==='WEBMCP_BRIDGE_CHECK')return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools:[{name:'status',inputSchema:{type:'object',properties:{}}}]};
+  if(m.type==='WEBMCP_CALL')throw Error('No real tools');return {ok:false};
+ }},storage:{local:{async get(k){return {[k]:mem[k]}},async set(v){Object.assign(mem,v)}}}};
+ const msg=document.createElement('div');msg.className='ds-message';
+ const md=document.createElement('div');md.className='ds-markdown';
+ const before=document.createElement('p');before.textContent='Prelude content';md.append(before);
+ const fence=document.createElement('div');fence.className='syntax-frame-v3';
+ const toolbar=document.createElement('div');toolbar.className='syntax-actions-v3';
+ toolbar.innerHTML='<span>text</span><button type="button">Copy</button><button type="button">Download</button>';
+ const pre=document.createElement('pre'),code=document.createElement('code');
+ code.textContent='[[WEBMCP_CALL]]'+JSON.stringify({id:'one_tool',tool:'status',arguments:{}})+'[[/WEBMCP_CALL]]';
+ pre.append(code);fence.append(toolbar,pre);md.append(fence);
+ const after=document.createElement('p');after.textContent='After tool';md.append(after);
+ // A distinct real code block should keep its Copy/Download header.
+ const real=document.createElement('div');real.className='syntax-frame-v3';
+ const realBar=document.createElement('div');realBar.className='syntax-actions-v3';
+ realBar.innerHTML='<span>text</span><button type="button">Copy</button><button type="button">Download</button>';
+ const realPre=document.createElement('pre'),realCode=document.createElement('code');
+ realCode.textContent='This is a normal code sample';realPre.append(realCode);real.append(realBar,realPre);md.append(real);
+ msg.append(md);document.getElementById('conversation').append(msg);
+ setTimeout(()=>{
+  const view=msg.querySelector('.webmcp-call-view');const text=view?.textContent||'';
+  document.body.dataset.fence3=JSON.stringify({
+   cards:msg.querySelectorAll('.webmcp-card').length,
+   headerCount:view?.querySelectorAll('.syntax-actions-v3').length,
+   toolbarStrings:[...view?.querySelectorAll('.syntax-actions-v3')||[]].map(n=>n.textContent),
+   ghostToolbar:text.includes('Prelude contenttextCopyDownload'),
+   before:text.includes('Prelude content'),after:text.includes('After tool'),
+   realCode:text.includes('This is a normal code sample'),
+   preservedRealToolbar:view?.querySelectorAll('.syntax-actions-v3').length===1,
+   sourceHidden:getComputedStyle(md).display==='none'
+  });
+ },1000);
+})();
+</script><script src="../extension/content.js"></script>

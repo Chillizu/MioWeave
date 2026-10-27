@@ -1,0 +1,112 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebMCP mixed content + callback gap</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div class="ds-toggle-button">Search</div>
+<textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="messages"></div>
+<script>
+(() => {
+ const memory={};
+ window.chrome={
+   runtime:{
+    id:"webmcp-mixed-harness",
+    async sendMessage(msg){
+     if(msg.type==="WEBMCP_CONFIG_GET")return {ok:true,config:{enabled:true,hideCallbacks:true,autoRunReadOnly:false,autoSendCallbacks:true}};
+     if(msg.type==="WEBMCP_BRIDGE_CHECK")return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools:[{name:"status",annotations:{readOnlyHint:true},inputSchema:{type:"object",properties:{}}}]};
+     return {ok:false,error:"stub"};
+    }
+   },
+   storage:{local:{
+    async get(keys){const out={};for(const k of (typeof keys==="string"?[keys]:keys||[]))if(k in memory)out[k]=memory[k];return out},
+    async set(patch){Object.assign(memory,patch)}
+   }}
+ };
+ const list=document.querySelector("#messages");
+ function item(role,html){
+   const row=document.createElement("div");
+   row.setAttribute("data-virtual-list-item-key",String(list.children.length+1));
+   row.className="virtual-row";
+   const message=document.createElement("div");
+   message.className="ds-message";
+   const body=document.createElement("div");
+   body.className=role==="assistant"?"ds-markdown":"ds-collapsible-text";
+   body.innerHTML=html;
+   message.append(body);
+   row.append(message);
+   if (role === "assistant") {
+     const actions = document.createElement("div");
+     actions.className = "ds-flex";
+     actions.textContent = "Copy / Regenerate";
+     actions.style.height = "50px";
+     row.append(actions);
+   }
+   list.append(row);
+   return {row,message,body};
+ }
+ const makeCall=id=>'[[WEBMCP_CALL]]'+JSON.stringify({id,tool:"status",arguments:{}})+'[[/WEBMCP_CALL]]';
+ const mixed=item("assistant",
+  '<p>工具前<strong>重要正文</strong>。</p>'
+  +'<p><code>'+makeCall("mixed")+'</code></p>'
+  +'<p>工具后<em>应当保留的结尾</em>。</p>');
+ const pure=item("assistant",'<p>'+makeCall("pure")+'</p>');
+ const mixed2=item("assistant",'<p>'+makeCall("mixed")+'</p>');
+ const callback=item("user",
+   '[[WEBMCP_RESULT]]'+JSON.stringify({id:"mixed",tool:"status",ok:true,result:{structuredContent:{kind:"status",name:"miodesk"}}})+'[[/WEBMCP_RESULT]]');
+ const trailing=item("assistant",'<p>Thought after tool</p>');
+
+ setTimeout(()=>{
+   const card=list.querySelector('.webmcp-card[data-webmcp-id="mixed"]');
+   const view=card?.closest(".webmcp-call-view");
+   const original=mixed.body;
+   const prose=view?.querySelectorAll(":scope > .webmcp-call-prose")||[];
+   const initial={
+    cards:list.querySelectorAll(".webmcp-card").length,
+    mixedCard:!!card,
+    viewChildren:[...view?.children||[]].map(n=>n.classList.contains("webmcp-card")?"CARD":n.textContent.trim()),
+    beforeBold:!!prose[0]?.querySelector("strong"),
+    afterEm:!!prose[1]?.querySelector("em"),
+    originalUntouched:original.textContent.includes("工具前重要正文")&&original.textContent.includes(makeCall("mixed")),
+    originalHidden:getComputedStyle(original).display==="none",
+    callbackRowHidden:callback.row.classList.contains("webmcp-callback-row-hidden"),
+    callbackRowDisplay:getComputedStyle(callback.row).display,
+    actionBarHidden:mixed.row.classList.contains("webmcp-tool-action-row") &&
+       getComputedStyle(mixed.row.querySelector(":scope > .ds-flex")).display==="none",
+    nativeActionStillExists:!!mixed.row.querySelector(":scope > .ds-flex"),
+    nextThoughtVisible:getComputedStyle(trailing.row).display!=="none"
+   };
+   mixed2.row.remove(); // test duplicate source can disappear without changing owner
+   setTimeout(()=>{
+     mixed.body.innerHTML='<p>更新后的<strong>前文</strong></p>'
+        +'<p><code>'+makeCall("mixed")+'</code></p>'
+        +'<p>更新后的<em>后文</em></p>';
+     pure.body.textContent="The tool call was edited away.";
+   },250);
+   setTimeout(()=>{
+     const view2=list.querySelector('.webmcp-call-view[data-webmcp-call-id="mixed"]');
+     document.body.dataset.mixed=JSON.stringify({...initial,
+       afterDuplicateRemoval:list.querySelectorAll(".webmcp-card").length,
+       mixedRendered:!!list.querySelector('.webmcp-card[data-webmcp-id="mixed"]'),
+       editedProse:[...view2?.querySelectorAll(".webmcp-call-prose")||[]].map(n=>n.textContent.trim()),
+       editedBold:!!view2?.querySelector(".webmcp-call-prose strong"),
+       editedEm:!!view2?.querySelector(".webmcp-call-prose em"),
+       removedCallRestored:pure.body.classList.contains("webmcp-source")===false
+         && pure.body.nextElementSibling?.classList.contains("webmcp-call-view")!==true
+     });
+   },850);
+   setTimeout(()=>{
+     callback.body.textContent="This row was recycled for a normal user message.";
+   },980);
+   setTimeout(()=>{
+     document.body.dataset.recycled=JSON.stringify({
+       callbackRowRestored:getComputedStyle(callback.row).display!=="none",
+       callbackProjectionCleared:!callback.body.classList.contains("webmcp-callback-projection"),
+       callbackMessageUnhidden:!callback.message.classList.contains("webmcp-callback-hidden"),
+       text:callback.body.textContent
+     });
+   },1300);
+ },950);
+})();
+</script>
+<script src="../extension/content.js"></script>
