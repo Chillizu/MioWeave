@@ -167,6 +167,63 @@ def run_unknown_callback_case(port):
         print("[PASS] unknown DeepSeek classes: full/batch/clipped, provenance, config, recycled rows")
 
 
+def run_panel_diagnostics_case(port):
+    with tempfile.TemporaryDirectory(prefix="mioweave-panel-diagnostics-") as profile:
+        url = f"http://127.0.0.1:{port}/probe/panel-diagnostics-harness.html"
+        cmd = [BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu",
+               "--disable-dev-shm-usage", f"--user-data-dir={profile}",
+               "--virtual-time-budget=2600", "--dump-dom", url]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
+        assert result.returncode == 0, result.stderr[-1200:]
+        parser = BodyParser()
+        parser.feed(result.stdout)
+        assert "data-diagnostics" in parser.attrs, result.stdout[-1400:]
+        report = json.loads(html.unescape(parser.attrs["data-diagnostics"]))
+        assert report["controlsExist"] and report["noSecretInReport"], report
+        assert report["hiddenWhenEnabled"], report
+        assert report["visibleWhenDisabled"], report
+        print("[PASS] inline callback diagnostics and settings; no callback data exposed")
+
+
+def run_journal_first_case(port):
+    with tempfile.TemporaryDirectory(prefix="mioweave-write-ahead-") as profile:
+        url = f"http://127.0.0.1:{port}/probe/journal-first-harness.html"
+        cmd = [BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu",
+               "--disable-dev-shm-usage", f"--user-data-dir={profile}",
+               "--virtual-time-budget=5400", "--dump-dom", url]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
+        assert result.returncode == 0, result.stderr[-1400:]
+        parser = BodyParser()
+        parser.feed(result.stdout)
+        assert "data-journal-first" in parser.attrs, result.stdout[-1300:]
+        data = json.loads(html.unescape(parser.attrs["data-journal-first"]))
+        assert data["beforeAck"]["count"] == 0, data
+        after = data["afterAck"]
+        assert after["count"] == 1 and after["acknowledged"], data
+        assert "not executed" in after["refused"] and not after["failedSaved"], data
+        assert after["successfulSaved"] == "result-ready", data
+        assert data["navigated"]["before"] == data["navigated"]["count"] == 1, data
+        assert "page changed" in data["navigated"]["label"], data
+        failed = data["continuingFailure"]
+        assert not failed["sent"] and failed["clicks"] == 0, data
+        assert "recovery unavailable" in failed["state"], data
+        draft = data["changedDraft"]
+        assert not draft["sent"] and draft["clicks"] == 0, data
+        assert draft["preserved"] and draft["journalPhase"] == "result-ready", data
+        assert "Draft changed" in draft["label"], data
+        restored = data["recovery"]
+        assert restored["phase"] == "submitted" and "uncertain" in restored["label"], data
+        assert restored["count"] == restored["afterClick"] == 1, data
+        assert data["batchBefore"]["calls"] == data["batchAfter"]["calls"] == 1, data
+        assert data["batchBefore"]["clicks"] == data["batchAfter"]["clicks"] == 0, data
+        assert "check" in data["batchBefore"]["button"].lower(), data
+        assert "Unverified" in data["batchAfter"]["button"], data
+        assert data["idCollision"] == {"phase":"collision","disabled":True,"noExtraCalls":True}, data
+        assert data["idMismatchOnReload"] == {"phase":"collision","disabled":True}, data
+        assert data["noChat"]["count"] == 1 and "not executed" in data["noChat"]["label"], data
+        print("[PASS] write-ahead tool/callback journal, failures fail closed, crash no-resend")
+
+
 def main():
     assert BROWSER, "Chromium/Google Chrome executable not found"
     with HTTPServer(("127.0.0.1", 0), Handler) as server:
@@ -178,6 +235,8 @@ def main():
         run_ui_protocol_case(server.server_address[1], "alternate-callback-dom-harness.html", "data-alternate-callback")
         run_ui_protocol_case(server.server_address[1], "unclassed-fence-harness.html", "data-fence3")
         run_unknown_callback_case(server.server_address[1])
+        run_panel_diagnostics_case(server.server_address[1])
+        run_journal_first_case(server.server_address[1])
     print("[PASS] no real local MCP calls, no user conversation modified")
 
 

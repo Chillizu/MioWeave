@@ -136,7 +136,7 @@ async function loadRecovery(chatId) {
 async function saveRecovery(chatId, callId, record) {
   const key = recoveryKey(chatId);
   if (!key || !/^[a-zA-Z0-9_:-]{1,150}$/.test(String(callId)) ||
-      !record || !["running", "result-ready", "submitted", "sent"].includes(record.phase) ||
+      !record || !["running", "result-ready", "continuing", "submitted", "sent"].includes(record.phase) ||
       !chrome.storage.session || JSON.stringify(record).length > 27000) return false;
   // Serialize read/modify/write to prevent concurrent tool completions from
   // overwriting each other's journal entries in the service worker.
@@ -212,8 +212,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message?.type === "WEBMCP_GLOBAL_POLICY_SET") {
+    // A fragment stays in the same options document; a query or other path does not.
     const allowedSender = _sender.id === chrome.runtime.id &&
-      _sender.url === chrome.runtime.getURL("options.html");
+      _sender.url?.split("#", 1)[0] === chrome.runtime.getURL("options.html");
     if (!allowedSender || !["ask", "always", "block"].includes(message.mode)) {
       sendResponse({ok:false,error:"Global policy can only be changed in MioWeave extension settings."});
       return false;

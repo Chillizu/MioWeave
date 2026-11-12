@@ -508,24 +508,28 @@ function refreshAutoApproveUi() {
   const title = control.querySelector(".webmcp-access-title");
   const description = control.querySelector(".webmcp-access-detail");
   const status = control.querySelector(".webmcp-access-status");
-  if (title) title.textContent = blocked ? "Privileged tools blocked" :
-    globalMode ? "Global auto-approval enabled" :
-      active ? "Automatic access enabled" : "Ask before privileged tools";
+  if (title) title.textContent = blocked ? "高权限工具已禁止" :
+    globalMode ? "全局自动批准" :
+      active ? "已临时允许当前聊天" : "高权限操作逐次确认";
   if (description) description.textContent = blocked
-    ? "Privileged commands and file changes are disabled globally."
+    ? "命令执行、文件修改与删除已禁止。"
     : globalMode
-      ? "Authorized chats can execute local commands and edits without per-call approval."
+      ? "已授权聊天可直接执行命令、修改或删除文件。"
       : state.approvalNotice && !active
         ? state.approvalNotice
         : active
-          ? "Commands and file changes can run without prompts until you switch chats or reload."
-          : "Shell commands, file edits and deletion require confirmation before execution.";
+          ? "命令执行、文件修改和删除无需逐次确认。"
+          : "执行命令、修改或删除文件前需确认。";
   control.classList.toggle("webmcp-access-error", Boolean(state.approvalNotice && !active));
-  if (status) status.textContent = blocked ? "Blocked" : globalMode ? "Global" : active ? "This chat" : "Ask each time";
+  if (status) status.textContent = blocked ? "全局" : globalMode ? "全局" : active ? "临时" : "默认";
+  const scope = control.querySelector(".webmcp-access-footer small");
+  if (scope) scope.textContent = blocked ? "只读工具不受影响" :
+    globalMode ? "所有聊天 · 持续保存" : active ? "切换聊天或刷新后失效" : "可临时允许当前聊天";
   if (button) {
-    button.textContent = blocked || globalMode ? "Manage policy" : active ? "Turn off" : "Enable for this chat";
+    button.textContent = blocked || globalMode ? "管理授权" : active ? "撤销授权" : "临时允许";
     button.classList.toggle("webmcp-access-disable", active);
-    button.setAttribute("aria-pressed", String(active));
+    if (blocked || globalMode) button.removeAttribute("aria-pressed");
+    else button.setAttribute("aria-pressed", String(active));
     button.disabled = false;
   }
 }
@@ -602,21 +606,53 @@ function savedPayload(payload) {
 }
 
 function registerCallMeta(call) {
-  callMetas.set(String(call.id), {tool:call.tool,
-    argsHash:hashText(JSON.stringify(call.arguments || {}))});
+  const id = String(call.id);
+  const incoming = {tool:call.tool,
+    argsHash:hashText(JSON.stringify(call.arguments || {}))};
+  const previous = callMetas.get(id);
+  // Call IDs are single-use within one conversation. Silently changing a
+  // previous ID's tool/arguments breaks idempotency and could mix results.
+  if (previous && (previous.tool !== incoming.tool ||
+                   previous.argsHash !== incoming.argsHash)) return false;
+  if (!previous) callMetas.set(id,incoming);
+  return true;
 }
 
-function rememberCallState(callId, phase, payload = null) {
+function markCallIdConflict(card) {
+  if (!card) return;
+  card.dataset.webmcpPhase = "collision";
+  const label = card.querySelector(".webmcp-state");
+  if (label) label.textContent = "Call ID reused · different request";
+  const run = card.querySelector(".webmcp-run");
+  if (run) {
+    run.disabled = true;
+    run.textContent = "Blocked";
+  }
+}
+
+// Memory updates are immediate for UI state. For privileged tools, the
+// initial "running" record MUST be durably acknowledged before dispatching
+// to the local bridge; otherwise a refresh can forget an already-started edit.
+function rememberCallState(callId, phase, payload = null, {requireAck = false} = {}) {
   const id = String(callId);
   const previous = callStates.get(id);
-  if (previous?.phase === "sent" && phase !== "sent") return;
-  const record = {phase,payload};
+  if (previous?.phase === "sent" && phase !== "sent") return Promise.resolve(!requireAck);
+  const meta = callMetas.get(id);
+  const record = {phase,payload,...(meta || {})};
   callStates.set(id, record);
   const chatId = currentChatId();
-  const meta = callMetas.get(id);
-  if (!chatId || !meta || state.contextInvalidated) return;
-  void runtimeMessage({type:"WEBMCP_RECOVERY_SAVE",chatId,callId:id,
-    record:{...meta,phase,payload:savedPayload(payload)}});
+  if (!chatId || !meta || state.contextInvalidated) {
+    if (requireAck && callStates.get(id) === record) callStates.delete(id);
+    return Promise.resolve(!requireAck);
+  }
+  const save = runtimeMessage({type:"WEBMCP_RECOVERY_SAVE",chatId,callId:id,
+    record:{...meta,phase,payload:savedPayload(payload)}})
+    .then(response => Boolean(response?.ok), () => false);
+  if (!requireAck) return save;
+  return save.then(ok => {
+    if (!ok && callStates.get(id) === record) callStates.delete(id);
+    return ok;
+  });
 }
 
 async function loadRecoveryState(chatId = currentChatId()) {
@@ -624,7 +660,7 @@ async function loadRecoveryState(chatId = currentChatId()) {
   const result = await runtimeMessage({type:"WEBMCP_RECOVERY_LOAD",chatId});
   if (currentChatId() !== chatId || !result?.ok) return;
   for (const [id,record] of Object.entries(result.records || {})) {
-    if (!record || !["running","result-ready","submitted","sent"].includes(record.phase)) continue;
+    if (!record || !["running","result-ready","continuing","submitted","sent"].includes(record.phase)) continue;
     if (typeof record.tool !== "string" || typeof record.argsHash !== "string") continue;
     callStates.set(id,{phase:record.phase,payload:record.payload,
       tool:record.tool,argsHash:record.argsHash});
@@ -636,13 +672,23 @@ function restoreCardState(card, callId) {
   if (!remembered) return false;
   const meta = callMetas.get(String(callId));
   if (remembered.argsHash && (!meta || meta.argsHash !== remembered.argsHash ||
-      remembered.tool !== meta.tool)) return false;
+      remembered.tool !== meta.tool)) {
+    markCallIdConflict(card);
+    return true;
+  }
 
   card.dataset.webmcpPhase = remembered.phase;
   card._webmcpPayload = remembered.payload;
   if (remembered.payload) {
     applyResultToCard(card, remembered.payload, {sent:remembered.phase === "sent"});
-    if (remembered.phase === "submitted") markSubmitted(card);
+    if (remembered.phase === "submitted" || remembered.phase === "continuing") {
+      // The composer may have been consumed immediately before a crash.
+      // Reconcile a receipt, but never automatically send this callback twice.
+      markSubmitted(card);
+      if (remembered.phase === "continuing") {
+        card.querySelector(".webmcp-state").textContent = "Callback uncertain · check receipt";
+      }
+    }
   } else if (remembered.phase === "running") {
     // The old page may have disappeared while a side-effecting tool was
     // running. We do not know whether it completed; never silently rerun it.
@@ -854,7 +900,7 @@ function queueAutoCallback(call, card, payload, extraCards = []) {
         approvalScope() !== origin) return false;
 
     // Never automatically retry a callback that may have been accepted.
-    if (callStates.get(String(call.id))?.phase === "submitted") {
+    if (["continuing", "submitted"].includes(callStates.get(String(call.id))?.phase)) {
       return checkCallbackReceipt(call, card);
     }
     const textarea = composer();
@@ -932,7 +978,32 @@ async function sendPreparedCallback(call, card, payload) {
 
   if (stateEl) stateEl.textContent = "Continuing…";
   card.classList.add("webmcp-card--continuing");
-  rememberCallState(call.id, "continuing", payload);
+  const initialScope = approvalScope();
+  const recorded = await rememberCallState(call.id, "continuing", payload, {requireAck:true});
+  // The journal ack is asynchronous. A user may have typed in the composer
+  // or navigated to another chat while we waited. Never click Send for a
+  // different draft or a different conversation.
+  const draftChanged = composer() !== textarea ||
+    textarea.value.trim() !== expectedText.trim();
+  const sameChat = approvalScope() === initialScope;
+  if (!recorded || !card.isConnected || state.contextInvalidated ||
+      !sameChat || draftChanged) {
+    if (recorded && sameChat && !state.contextInvalidated) {
+      // We know no Send click occurred. Only offer a fresh Continue after a
+      // durable rollback; otherwise remain conservative on a future reload.
+      await rememberCallState(call.id, "result-ready", payload, {requireAck:true});
+    }
+    card.classList.remove("webmcp-card--continuing");
+    if (stateEl) stateEl.textContent = draftChanged
+      ? "Draft changed · callback not sent"
+      : "Callback paused · recovery unavailable";
+    if (actions) actions.hidden = false;
+    if (run) {
+      run.disabled = false;
+      run.textContent = "Continue";
+    }
+    return false;
+  }
 
   const expected = textarea.value;
   for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -988,6 +1059,7 @@ function approvalPrompt(call) {
   return new Promise(resolve => {
     const layer = document.createElement("div");
     layer.className = "webmcp-approval-layer";
+    applyHostTheme(layer);
     layer.setAttribute("role", "presentation");
     const dialog = document.createElement("div");
     dialog.className = "webmcp-approval-dialog";
@@ -1040,6 +1112,10 @@ function approvalPrompt(call) {
 }
 
 async function executeCall(call, card, options = {}) {
+  if (card.dataset.webmcpPhase === "collision" || !registerCallMeta(call)) {
+    markCallIdConflict(card);
+    return null;
+  }
   const key = approvalScope() + ":" + String(call.id);
   const existing = activeToolCalls.get(key);
   if (existing) {
@@ -1062,7 +1138,8 @@ async function executeCall(call, card, options = {}) {
 }
 
 async function executeCallImpl(call, card, {deferCallback = false} = {}) {
-  if (card.dataset.webmcpRunning === "1" || card.dataset.webmcpPhase === "sent") return null;
+  if (card.dataset.webmcpRunning === "1" ||
+      ["sent","collision"].includes(card.dataset.webmcpPhase)) return null;
   card.dataset.webmcpRunning = "1";
   const run = card.querySelector(".webmcp-run");
   const stateEl = card.querySelector(".webmcp-state");
@@ -1092,9 +1169,25 @@ async function executeCallImpl(call, card, {deferCallback = false} = {}) {
     }
   }
 
-  rememberCallState(call.id, "running");
-
+  const privileged = !isReadOnlyTool(call.tool) && call.tool !== "webmcp.ping";
   if (run) run.disabled = true;
+  if (stateEl) stateEl.textContent = privileged ? "Recording execution…" : "Running…";
+  const executionScope = approvalScope();
+  const recorded = await rememberCallState(call.id, "running", null, {requireAck:privileged});
+  if (!recorded || !card.isConnected || state.contextInvalidated ||
+      approvalScope() !== executionScope) {
+    // Fail closed: execution has NOT been dispatched. A missing journal entry
+    // must never be interpreted as permission to re-run a potentially
+    // destructive operation after browser navigation.
+    delete card.dataset.webmcpRunning;
+    if (stateEl) stateEl.textContent = recorded
+      ? "Execution paused · page changed" : "Recovery unavailable · not executed";
+    if (run) {
+      run.disabled = false;
+      run.textContent = "Retry setup";
+    }
+    return null;
+  }
   if (stateEl) stateEl.textContent = "Running…";
   card.classList.add("webmcp-card--running");
 
@@ -1286,7 +1379,7 @@ function createToolCard(call, {batch = false} = {}) {
   ].join("");
 
   card._webmcpCall = call;
-  registerCallMeta(call);
+  const uniqueId = registerCallMeta(call);
   card.querySelector(".webmcp-tool").textContent = call.tool;
   card.querySelector(".webmcp-tool-provider").textContent = state.localToolLabel || "MioDesk";
   const args = card.querySelector(".webmcp-args");
@@ -1298,7 +1391,8 @@ function createToolCard(call, {batch = false} = {}) {
   }
   const actions = card.querySelector(".webmcp-actions");
   if (batch) actions.hidden = true;
-  else card.querySelector(".webmcp-run").addEventListener("click", () => {
+  if (!uniqueId) markCallIdConflict(card);
+  else if (!batch) card.querySelector(".webmcp-run").addEventListener("click", () => {
     if (card.dataset.webmcpPhase === "submitted") {
       void checkCallbackReceipt(call, card);
     } else if (card._webmcpPayload &&
@@ -1417,12 +1511,14 @@ function makeBatchCards(parsedCalls, source, {allowAutoRun = true} = {}) {
   source.after(view);
 
   for (const item of items) restoreCardState(item.card, item.call.id);
-  const interrupted = items.some(item => item.card.dataset.webmcpPhase === "unknown");
+  const interrupted = items.some(item =>
+    ["unknown", "collision"].includes(item.card.dataset.webmcpPhase));
   if (interrupted) {
-    button.textContent = "Inspect interrupted tool";
+    button.textContent = items.some(item => item.card.dataset.webmcpPhase === "collision")
+      ? "Call ID conflict · new IDs required" : "Inspect interrupted tool";
     button.disabled = true;
   }
-  if (callStates.get(batchId)?.phase === "submitted" && items[0]?.card) {
+  if (["continuing", "submitted"].includes(callStates.get(batchId)?.phase) && items[0]?.card) {
     markSubmitted(items[0].card);
   }
 
@@ -1442,7 +1538,7 @@ function makeBatchCards(parsedCalls, source, {allowAutoRun = true} = {}) {
   };
 
   const continueBatch = async () => {
-    if (callStates.get(batchId)?.phase === "submitted" ||
+    if (["continuing", "submitted"].includes(callStates.get(batchId)?.phase) ||
         items.some(item => item.card.dataset.webmcpPhase === "submitted")) {
       const confirmed = visibleCallbackReceipt(batchCall);
       if (!confirmed) {
@@ -1472,12 +1568,12 @@ function makeBatchCards(parsedCalls, source, {allowAutoRun = true} = {}) {
         rememberCallState(items[0].call.id, "sent", items[0].card._webmcpPayload);
         applyResultToCard(items[0].card, items[0].card._webmcpPayload, {sent:true});
       } else {
-        button.textContent = callStates.get(batchId)?.phase === "submitted"
+        button.textContent = ["continuing", "submitted"].includes(callStates.get(batchId)?.phase)
           ? "Check receipt" : "Continue batch";
       }
       return sent;
     } finally {
-      if (!sent) button.textContent = callStates.get(batchId)?.phase === "submitted"
+      if (!sent) button.textContent = ["continuing", "submitted"].includes(callStates.get(batchId)?.phase)
         ? "Check receipt" : "Continue batch";
       button.disabled = false;
     }
@@ -1486,7 +1582,8 @@ function makeBatchCards(parsedCalls, source, {allowAutoRun = true} = {}) {
   const runBatch = async () => {
     // A page reload may interrupt a local command whose completion is
     // unknown. Never run the batch again as if it were a fresh request.
-    if (items.some(item => item.card.dataset.webmcpPhase === "unknown")) return;
+    if (items.some(item =>
+        ["unknown", "collision"].includes(item.card.dataset.webmcpPhase))) return;
     if (view.dataset.webmcpBatchRunning === "1") return;
     view.dataset.webmcpBatchRunning = "1";
     button.disabled = true;
@@ -1517,7 +1614,7 @@ function makeBatchCards(parsedCalls, source, {allowAutoRun = true} = {}) {
   if (allCompleted) controls.hidden = true;
   else if (interrupted) {button.textContent = "Inspect interrupted tool";button.disabled = true;}
   else if (items.every(x=>Boolean(x.card._webmcpPayload))) {
-    button.textContent = callStates.get(batchId)?.phase === "submitted"
+    button.textContent = ["continuing", "submitted"].includes(callStates.get(batchId)?.phase)
       ? "Check receipt" : "Continue batch";
   } else if (allowAutoRun && state.recoveryReady && !interrupted && items.every(x => autoApproveActive() ||
              (state.autoRunReadOnly && isReadOnlyTool(x.call.tool)))) {
@@ -2407,8 +2504,8 @@ function createControls() {
   const settings = document.createElement("button");
   settings.type = "button";
   settings.className = "webmcp-settings-trigger";
-  settings.setAttribute("aria-label", "MioWeave quick settings");
-  settings.title = "MioWeave quick settings";
+  settings.setAttribute("aria-label", "MioWeave 快捷设置");
+  settings.title = "MioWeave 快捷设置";
   settings.innerHTML = svgGear();
   settings.addEventListener("click", event => {
     event.stopPropagation();
@@ -2439,10 +2536,10 @@ function addControls() {
 }
 
 function statusLabel() {
-  if (!state.connected) return "Offline";
-  if (!state.tokenConfigured) return "Needs setup";
-  if (!state.authorized) return "Auth failed";
-  return `${state.tools.length} tools`;
+  if (!state.connected) return "未连接";
+  if (!state.tokenConfigured) return "待配置 Token";
+  if (!state.authorized) return "待授权";
+  return `${state.tools.length} 个工具`;
 }
 
 function refreshUi() {
@@ -2458,12 +2555,12 @@ function refreshUi() {
       else if (state.connected) dot.classList.add("webmcp-toggle__status--warn");
     }
     toggle.title = autoApproveActive()
-      ? `MioWeave · auto-approve enabled (${state.approvalMode === "always" ? "global" : "this chat"})`
+      ? `MioWeave · 自动批准（${state.approvalMode === "always" ? "全局" : "当前聊天"}）`
       : !state.authorized
         ? statusLabel()
         : state.chatReady
-          ? `MioWeave ready · ${state.tools.length} tools`
-          : `MioWeave connected · initializes on next message · ${state.tools.length} tools`;
+          ? `MioWeave 已就绪 · ${state.tools.length} 个工具`
+          : `MioWeave 已连接 · 下次发送消息时载入工具`;
   }
   renderPanelState();
 }
@@ -2496,28 +2593,29 @@ function autoApproveAnyPrompt(chatId) {
   return new Promise(resolve => {
     const layer = document.createElement("div");
     layer.className = "webmcp-approval-layer";
+    applyHostTheme(layer);
     const dialog = document.createElement("div");
     dialog.className = "webmcp-approval-dialog webmcp-auto-approval-dialog";
     dialog.setAttribute("role", "dialog");
     dialog.setAttribute("aria-modal", "true");
-    dialog.setAttribute("aria-label", "Enable automatic local tool execution");
+    dialog.setAttribute("aria-label", "临时允许本地工具");
 
     const heading = document.createElement("h3");
-    heading.textContent = "Auto-approve all tools?";
+    heading.textContent = "临时允许当前聊天？";
     const warning = document.createElement("p");
-    warning.textContent = "This lets DeepSeek execute shell commands and read, write, or delete local files without asking again. Only enable it for a conversation you trust.";
+    warning.textContent = "DeepSeek 将能直接执行命令，读取、修改或删除本地文件，不再逐次确认。仅对可信聊天启用；Bridge 不提供操作系统隔离。";
     const scope = document.createElement("p");
     scope.className = "webmcp-approval-scope";
-    scope.textContent = "Scope: current chat only. Disabled when the chat changes or this page reloads.";
+    scope.textContent = "仅当前聊天有效，切换聊天或刷新页面后失效。";
     const actions = document.createElement("div");
     actions.className = "webmcp-approval-actions";
     const cancel = document.createElement("button");
     cancel.type = "button";
-    cancel.textContent = "Keep asking";
+    cancel.textContent = "保持逐次确认";
     const enable = document.createElement("button");
     enable.type = "button";
     enable.className = "webmcp-approval-allow";
-    enable.textContent = "Auto-approve this chat";
+    enable.textContent = "允许当前聊天";
     actions.append(cancel, enable);
     dialog.append(heading, warning, scope, actions);
     layer.appendChild(dialog);
@@ -2553,13 +2651,13 @@ function autoApproveAnyRow() {
   row.innerHTML = [
     '<div class="webmcp-access-heading">',
     '<span class="webmcp-access-indicator" aria-hidden="true"></span>',
-    '<strong class="webmcp-access-title">Ask before privileged tools</strong>',
-    '<span class="webmcp-access-status">Ask each time</span>',
+    '<strong class="webmcp-access-title">高权限操作逐次确认</strong>',
+    '<span class="webmcp-access-status">默认</span>',
     '</div>',
-    '<p class="webmcp-access-detail" role="status" aria-live="polite">Shell commands, file edits and deletion require confirmation before execution.</p>',
+    '<p class="webmcp-access-detail" role="status" aria-live="polite">执行命令、修改或删除文件前需确认。</p>',
     '<div class="webmcp-access-footer">',
-    '<small>Current chat only · resets on refresh</small>',
-    '<button class="webmcp-auto-approve-button" type="button" aria-pressed="false">Enable for this chat</button>',
+    '<small>可临时允许当前聊天</small>',
+    '<button class="webmcp-auto-approve-button" type="button" aria-pressed="false">临时允许</button>',
     '</div>'
   ].join("");
   const button = row.querySelector("button");
@@ -2578,8 +2676,8 @@ function autoApproveAnyRow() {
     const scope = approvalScope();
     if (!state.enabled || !state.authorized) {
       state.approvalNotice = !state.enabled
-        ? "WebMCP is switched off. Turn it on before granting automatic access."
-        : "Local bridge isn't authorized. Check Connection settings or tap Refresh.";
+        ? "请先在扩展设置中启用本地工具。"
+        : "Bridge 尚未授权，请检查连接设置或刷新状态。";
       refreshAutoApproveUi();
       return;
     }
@@ -2608,14 +2706,14 @@ function callbackDelayRow() {
   const copy = document.createElement("span");
   copy.className = "webmcp-setting-copy";
   const title = document.createElement("strong");
-  title.textContent = "Callback spacing";
+  title.textContent = "回传间隔";
   const details = document.createElement("small");
-  details.textContent = "Wait before each auto-send; batch calls share one callback.";
+  details.textContent = "多工具共用一次结果回传";
   copy.append(title, details);
   const select = document.createElement("select");
   select.className = "webmcp-delay-select";
-  select.setAttribute("aria-label", "Minimum callback interval");
-  for (const [ms, label] of [[0,"Instant"],[500,"0.5 s"],[1000,"1 s"],[1500,"1.5 s"],[3000,"3 s"],[5000,"5 s"],[10000,"10 s"]]) {
+  select.setAttribute("aria-label", "最小回传间隔");
+  for (const [ms, label] of [[0,"立即"],[500,"0.5 秒"],[1000,"1 秒"],[1500,"1.5 秒"],[3000,"3 秒"],[5000,"5 秒"],[10000,"10 秒"]]) {
     const option = document.createElement("option");
     option.value = String(ms);
     option.textContent = label;
@@ -2641,6 +2739,7 @@ function switchRow(title, description, key) {
   row.querySelector("strong").textContent = title;
   row.querySelector("small").textContent = description;
   const input = row.querySelector("input");
+  input.name = key;
   input.checked = Boolean(state[key]);
   input.addEventListener("change", async () => {
     state[key] = input.checked;
@@ -2707,37 +2806,119 @@ function buildBootstrap(fingerprint = toolFingerprint()) {
   ].join("\n");
 }
 
+// Non-sensitive, on-demand presentation check. Never copies chat content,
+// tool arguments, callback JSON, token values or conversation identifiers.
+function callbackDisplayDiagnostics() {
+  const candidates = callbackBodies();
+  let confirmed = 0;
+  let clipped = 0;
+  let visibleRaw = 0;
+  for (const body of candidates) {
+    const matched = callbackMatch(body);
+    const preview = matched ? null : ownedCollapsedCallback(callbackSurfaceText(body));
+    if (!matched && !preview) continue;
+    if (matched) confirmed++;
+    else clipped++;
+    const message = body.closest(".ds-message") || body;
+    const row = message.closest("[data-virtual-list-item-key]");
+    const hidden = message.classList.contains("webmcp-callback-hidden") ||
+      row?.classList.contains("webmcp-callback-row-hidden") ||
+      body.classList.contains("webmcp-callback-projection");
+    if (state.hideCallbacks && !hidden && body.isConnected &&
+        body.getClientRects().length) visibleRaw++;
+  }
+  return {version:chrome.runtime?.getManifest?.().version || "local",
+    enabled:state.enabled, hideCallbacks:state.hideCallbacks,
+    bridgeAuthorized:state.authorized, confirmed, clipped, visibleRaw};
+}
+
+function callbackDiagnosticsRow() {
+  const row = document.createElement("div");
+  row.className = "webmcp-diagnostics-row";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "检测回传显示";
+  const status = document.createElement("span");
+  status.className = "webmcp-diagnostics-status";
+  status.setAttribute("role", "status");
+  button.addEventListener("click", () => {
+    // This is a display-only rescan; it does not rerun a tool or resend results.
+    scanCallbacks();
+    const report = callbackDisplayDiagnostics();
+    status.textContent = !report.hideCallbacks
+      ? "当前设置为显示原始回传"
+      : report.visibleRaw
+        ? `仍有 ${report.visibleRaw} 条原始回传可见，请尝试刷新页面`
+        : report.confirmed + report.clipped === 0
+          ? "当前聊天没有可识别的回传"
+          : `${report.confirmed} 条完整回传 · ${report.clipped} 条预览 · 未检测到泄露`;
+    status.title = `v${report.version} · bridge authorized: ${report.bridgeAuthorized}`;
+  });
+  row.append(button,status);
+  return row;
+}
+
+function applyHostTheme(node) {
+  // The popover is portalled to body, outside DeepSeek's theme scope.
+  // Use the composer's first opaque ancestor instead of private host classes.
+  const trigger = document.querySelector(".webmcp-settings-trigger");
+  for (let parent = trigger?.parentElement; parent; parent = parent.parentElement) {
+    const background = getComputedStyle(parent).backgroundColor;
+    if (!/^rgba?\(/.test(background)) continue;
+    const channels = background.match(/[\d.]+/g)?.map(Number);
+    if (!channels || channels.length < 3 || (channels.length > 3 && channels[3] < .9)) continue;
+    const brightness = channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+    node.style.colorScheme = brightness < 128 ? "dark" : "light";
+    return;
+  }
+  node.style.colorScheme = "light dark";
+}
+
 function makePanel(trigger) {
   const panel = document.createElement("div");
   panel.className = "webmcp-panel";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "MioWeave 设置");
   panel.innerHTML = [
     '<div class="webmcp-panel__header">',
-    '<div class="webmcp-panel__identity"><span class="webmcp-panel__mark">' + brandIcon() + '</span><span><strong>MioWeave</strong><small>Local tools · DeepSeek</small></span></div>',
-    '<button type="button" class="webmcp-panel__close" aria-label="Close">×</button>',
+    '<div class="webmcp-panel__identity"><span class="webmcp-panel__mark">' + brandIcon() + '</span><span><strong>MioWeave</strong><small>DeepSeek 本地工具</small></span></div>',
+    '<button type="button" class="webmcp-panel__close" aria-label="关闭设置">×</button>',
     "</div>",
     '<div class="webmcp-connection">',
     '<span class="webmcp-connection__dot"></span>',
     '<span class="webmcp-connection__label"></span>',
-    '<button type="button" class="webmcp-refresh">Refresh</button>',
+    '<button type="button" class="webmcp-refresh">刷新</button>',
     "</div>",
     '<div class="webmcp-chat-state">',
-    '<span class="webmcp-chat-state__icon">' + brandIcon() + '</span>',
+    '<span class="webmcp-chat-state__icon" aria-hidden="true"></span>',
     '<span class="webmcp-chat-state__copy"><strong></strong><small></small></span>',
-    '<button type="button" class="webmcp-reinit" title="Reinitialize tools on the next message">Re-sync</button>',
+    '<button type="button" class="webmcp-reinit" title="下次发送消息时重新载入工具">重新同步</button>',
     "</div>",
-    '<div class="webmcp-panel__section webmcp-permissions-section"><h4>Session access</h4></div>',
-    '<div class="webmcp-panel__section webmcp-behavior-section"><h4>Quick controls</h4></div>',
-    '<div class="webmcp-panel__footer webmcp-quick-footer"><span class="webmcp-init-note">Full configuration lives in the extension.</span><button type="button" class="webmcp-open-full">Open full settings ↗</button></div>'
+    '<div class="webmcp-panel__section webmcp-permissions-section"><h4>执行权限</h4></div>',
+    '<div class="webmcp-panel__section webmcp-behavior-section"><h4>快捷设置</h4></div>',
+    '<details class="webmcp-panel__section webmcp-panel__diagnostics"><summary>诊断</summary></details>',
+    '<div class="webmcp-panel__footer webmcp-quick-footer"><button type="button" class="webmcp-open-full">全部设置</button></div>'
   ].join("");
 
   panel.querySelector(".webmcp-permissions-section").append(autoApproveAnyRow());
 
   panel.querySelector(".webmcp-behavior-section").append(
-    switchRow("Auto-run read-only", "status, list, read and search", "autoRunReadOnly"),
+    switchRow("自动运行只读工具", "status、list、read、search", "autoRunReadOnly"),
+    switchRow("折叠工具回传", "隐藏原始传输消息，保留执行结果", "hideCallbacks"),
     callbackDelayRow()
   );
+  panel.querySelector(".webmcp-panel__diagnostics").append(callbackDiagnosticsRow());
 
-  panel.querySelector(".webmcp-panel__close").addEventListener("click", () => closeSettingsPanel());
+  panel.querySelector(".webmcp-panel__close").addEventListener("click", () => {
+    closeSettingsPanel();
+    trigger.focus({preventScroll:true});
+  });
+  panel.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    closeSettingsPanel();
+    trigger.focus({preventScroll:true});
+  });
   panel.querySelector(".webmcp-refresh").addEventListener("click", async () => {
     await refreshBridge();
     await refreshChatReady();
@@ -2745,8 +2926,8 @@ function makePanel(trigger) {
   panel.querySelector(".webmcp-reinit").addEventListener("click", async () => {
     await clearChatInitialized();
     const button = panel.querySelector(".webmcp-reinit");
-    button.textContent = "Next send";
-    setTimeout(() => { if (button.isConnected) button.textContent = "Re-sync"; }, 1200);
+    button.textContent = "下次发送生效";
+    setTimeout(() => { if (button.isConnected) button.textContent = "重新同步"; }, 1200);
   });
   panel.querySelector(".webmcp-open-full").addEventListener("click", async () => {
     await runtimeMessage({type:"WEBMCP_OPEN_OPTIONS"});
@@ -2762,6 +2943,7 @@ function makePanel(trigger) {
 function positionPanel(trigger) {
   const panel = document.querySelector(".webmcp-panel");
   if (!panel || !trigger) return;
+  applyHostTheme(panel);
   const rect = trigger.getBoundingClientRect();
   const width = Math.min(368, window.innerWidth - 24);
   const left = Math.min(window.innerWidth - width - 12, Math.max(12, rect.right - width));
@@ -2777,7 +2959,7 @@ function renderPanelState() {
   dot.className = "webmcp-connection__dot";
   if (state.authorized) dot.classList.add("webmcp-connection__dot--ok");
   else if (state.connected) dot.classList.add("webmcp-connection__dot--warn");
-  label.textContent = state.authorized ? `Connected · ${state.tools.length} tools` : statusLabel();
+  label.textContent = state.authorized ? `已连接 · ${state.tools.length} 个工具` : statusLabel();
 
   const url = panel.querySelector(".webmcp-url");
   if (url && !url.matches(":focus")) {
@@ -2794,12 +2976,12 @@ function renderPanelState() {
   const chatIcon = panel.querySelector(".webmcp-chat-state__icon");
   if (chatStrong && chatSmall && chatIcon) {
     chatIcon.classList.toggle("webmcp-chat-state__icon--ready", state.chatReady);
-    chatStrong.textContent = state.chatReady ? "Chat ready" : "Chat not initialized";
-    chatSmall.textContent = !state.authorized
-      ? "Connect the local bridge first."
-      : state.chatReady
-        ? `${state.tools.length} tools · schema ${toolFingerprint()}`
-        : "Tools will attach to your next message.";
+    chatStrong.textContent = !state.enabled ? "本地工具已停用" : state.chatReady ? "工具已载入" : "等待载入工具";
+    chatSmall.textContent = !state.enabled
+      ? "在扩展设置中启用后即可使用。"
+      : !state.authorized
+        ? "连接 Bridge 后可使用本地工具。"
+        : state.chatReady ? "当前聊天可调用本地工具。" : "下次发送消息时自动载入。";
   }
 
   refreshAutoApproveUi();
@@ -2857,6 +3039,7 @@ async function openSettingsPanel(trigger) {
   if (!config && state.contextInvalidated) return;
   if (config?.ok) Object.assign(state, config.config);
   const panel = makePanel(trigger);
+  panel.querySelector(".webmcp-panel__close").focus({preventScroll:true});
   renderPanelState();
   await refreshBridge();
   if (!state.contextInvalidated) await refreshChatReady();

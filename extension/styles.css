@@ -1,13 +1,44 @@
 :root {
-  --webmcp-blue: #3964fe;
-  --webmcp-blue-bg: #edf3fe;
-  --webmcp-blue-border: #b7c8fe;
-  --webmcp-text: #0f1115;
-  --webmcp-muted: #6b7280;
-  --webmcp-border: rgba(15, 17, 21, .10);
-  --webmcp-soft: rgba(15, 17, 21, .045);
-  --webmcp-danger: #d94a4a;
+  --webmcp-blue: light-dark(#3f5fe2, #91a2ff);
+  --webmcp-blue-bg: light-dark(#edf1ff, #2b3352);
+  --webmcp-blue-border: light-dark(#c6d0ff, #4c5987);
+  --webmcp-text: light-dark(#1f2329, #eceef2);
+  --webmcp-muted: light-dark(#667080, #a6adba);
+  --webmcp-border: light-dark(#e3e6ec, #3c414b);
+  --webmcp-soft: light-dark(#f3f5f8, #292c33);
+  --webmcp-danger: light-dark(#bd4141, #f29b9b);
+  --webmcp-surface: light-dark(#ffffff, #212327);
+  --webmcp-page: light-dark(#f8f9fb, #17181c);
+  --webmcp-hover: light-dark(#e9edf3, #333741);
+  --webmcp-warning: light-dark(#8a561b, #e8b875);
+  --webmcp-warning-bg: light-dark(#fff8ed, #362e22);
+  --webmcp-warning-border: light-dark(#ead4b2, #665138);
+  --webmcp-solid: #4664ef;
   --webmcp-font: quote-cjk-patch, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+}
+
+.webmcp-panel,
+.webmcp-card,
+.webmcp-approval-layer {
+  color-scheme: light dark;
+}
+
+.webmcp-panel [hidden] {
+  display: none !important;
+}
+
+.webmcp-panel button:focus-visible,
+.webmcp-panel select:focus-visible,
+.webmcp-panel summary:focus-visible,
+.webmcp-switch input:focus-visible + span {
+  outline: 2px solid var(--webmcp-blue);
+  outline-offset: 3px;
+}
+
+.webmcp-panel__diagnostics > summary {
+  cursor: pointer;
+  color: var(--webmcp-muted);
+  font-size: 12px;
 }
 
 .webmcp-controls {
@@ -99,25 +130,21 @@
 .webmcp-quick-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 13px 8px 2px;
+  justify-content: flex-end;
+  padding: 12px 6px 2px;
   gap: 10px;
 }
-.webmcp-quick-footer .webmcp-init-note {
-  min-width: 0;
-  font-size: 10px;
-}
 .webmcp-open-full {
-  border: 1px solid #dae2fc;
-  background: #f1f5ff;
-  color: #4c69bf;
+  border: 1px solid var(--webmcp-border);
+  background: transparent;
+  color: var(--webmcp-blue);
   border-radius: 8px;
   padding: 7px 10px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
 }
-.webmcp-open-full:hover {background:#e7eeff}
+.webmcp-open-full:hover {background:var(--webmcp-soft)}
 
 .webmcp-settings-trigger,
 .webmcp-panel button,
@@ -133,14 +160,14 @@
   display: grid;
   place-items: center;
   padding: 0;
-  color: #6b7280;
+  color: var(--webmcp-muted);
   background: transparent;
   cursor: pointer;
 }
 
 .webmcp-settings-trigger:hover {
   color: var(--webmcp-text);
-  background: rgba(15, 17, 21, .055);
+  background: var(--webmcp-soft);
 }
 
 .webmcp-settings-trigger svg {
@@ -192,13 +219,14 @@
 
 .webmcp-delay-select {
   width: 88px;
+  margin-left: auto;
   flex: 0 0 auto;
   padding: 6px 8px;
-  border: 1px solid rgba(15,17,21,.12);
+  border: 1px solid var(--webmcp-border);
   border-radius: 8px;
-  color: #555e6c;
-  background: #fff;
-  font: 11px/1.3 var(--webmcp-font);
+  color: var(--webmcp-text);
+  background: var(--webmcp-soft);
+  font: 12px/1.4 var(--webmcp-font);
   cursor: pointer;
 }
 
@@ -432,8 +460,8 @@
   width: min(480px, 100%);
   padding: 22px;
   border-radius: 16px;
-  background: #fff;
-  color: #232936;
+  background: var(--webmcp-surface);
+  color: var(--webmcp-text);
   box-shadow: 0 16px 55px rgba(0, 0, 0, .19);
   font: 13px/1.5 var(--webmcp-font);
 }
@@ -446,15 +474,15 @@
 
 .webmcp-approval-dialog p {
   margin: 0 0 13px;
-  color: #626a75;
+  color: var(--webmcp-muted);
 }
 
 .webmcp-approval-dialog .webmcp-approval-scope {
   padding: 10px 12px;
-  border: 1px solid #efd5b9;
+  border: 1px solid var(--webmcp-warning-border);
   border-radius: 8px;
-  background: #fff8ef;
-  color: #81572c;
+  background: var(--webmcp-warning-bg);
+  color: var(--webmcp-warning);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -467,8 +495,8 @@
   overflow-wrap: anywhere;
   padding: 12px;
   border-radius: 9px;
-  background: #f5f6f8;
-  color: #444a54;
+  background: var(--webmcp-soft);
+  color: var(--webmcp-text);
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -483,15 +511,15 @@
   min-width: 84px;
   padding: 7px 13px;
   border-radius: 8px;
-  border: 1px solid #e1e4e8;
-  color: #555f6d;
-  background: #fff;
+  border: 1px solid var(--webmcp-border);
+  color: var(--webmcp-text);
+  background: var(--webmcp-surface);
   cursor: pointer;
 }
 
 .webmcp-approval-actions .webmcp-approval-allow {
-  background: #3964fe;
-  border-color: #3964fe;
+  background: var(--webmcp-solid);
+  border-color: var(--webmcp-solid);
   color: white;
 }
 
@@ -503,9 +531,9 @@
 .webmcp-auto-approve-any {
   margin: 9px 0 2px;
   padding: 12px;
-  border: 1px solid rgba(15, 17, 21, .09);
-  border-radius: 12px;
-  background: #f8f9fb;
+  border: 1px solid var(--webmcp-border);
+  border-radius: 10px;
+  background: var(--webmcp-soft);
 }
 
 .webmcp-access-heading {
@@ -528,19 +556,19 @@
   flex: 1 1 auto;
   font-size: 12px;
   font-weight: 600;
-  color: #323741;
+  color: var(--webmcp-text);
 }
 
 .webmcp-access-status {
   flex: 0 0 auto;
-  font-size: 10px;
-  color: #858b95;
+  font-size: 11px;
+  color: var(--webmcp-muted);
 }
 
 .webmcp-access-detail {
   margin: 7px 0 12px;
-  color: #747c87;
-  font-size: 11px;
+  color: var(--webmcp-muted);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -553,8 +581,8 @@
 .webmcp-access-footer small {
   min-width: 0;
   flex: 1 1 auto;
-  color: #929aa4;
-  font-size: 10px;
+  color: var(--webmcp-muted);
+  font-size: 11px;
   line-height: 1.4;
 }
 
@@ -562,22 +590,22 @@
   flex: 0 0 auto;
   min-height: 30px;
   padding: 6px 10px;
-  border: 1px solid rgba(56, 87, 153, .12);
+  border: 1px solid var(--webmcp-blue-border);
   border-radius: 8px;
-  background: #ecf1ff;
-  color: #365ec1;
+  background: var(--webmcp-blue-bg);
+  color: var(--webmcp-blue);
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 550;
   cursor: pointer;
 }
 
 .webmcp-auto-approve-button:hover {
-  background: #e1eaff;
+  background: var(--webmcp-hover);
 }
 
 .webmcp-auto-approve-button:focus-visible {
-  outline: 2px solid #577cf4;
+  outline: 2px solid var(--webmcp-blue);
   outline-offset: 2px;
 }
 
@@ -587,27 +615,27 @@
 }
 
 .webmcp-auto-approve-any--active {
-  border-color: rgba(183, 104, 41, .28);
-  background: #fff8f1;
+  border-color: var(--webmcp-warning-border);
+  background: var(--webmcp-warning-bg);
 }
 
 .webmcp-auto-approve-any--active .webmcp-access-indicator {
-  background: #cb8537;
+  background: var(--webmcp-warning);
 }
 
 .webmcp-auto-approve-any--active .webmcp-access-status,
 .webmcp-auto-approve-any--active .webmcp-access-title {
-  color: #8b592b;
+  color: var(--webmcp-warning);
 }
 
 .webmcp-auto-approve-any--active .webmcp-access-disable {
-  border-color: #d8c7b3;
-  background: #fff;
-  color: #8b592b;
+  border-color: var(--webmcp-warning-border);
+  background: transparent;
+  color: var(--webmcp-warning);
 }
 
 .webmcp-auto-approve-any--active .webmcp-access-disable:hover {
-  background: #fff0df;
+  background: var(--webmcp-warning-bg);
 }
 
 .webmcp-panel {
@@ -616,15 +644,14 @@
   width: min(368px, calc(100vw - 24px));
   max-height: min(650px, calc(100vh - 112px));
   overflow: auto;
-  padding: 11px;
+  padding: 14px;
   box-sizing: border-box;
-  border: 1px solid rgba(15, 17, 21, .095);
-  border-radius: 17px;
-  background: rgba(255, 255, 255, .985);
-  box-shadow: 0 14px 38px rgba(15, 17, 21, .105), 0 2px 7px rgba(15, 17, 21, .035);
+  border: 1px solid var(--webmcp-border);
+  border-radius: 14px;
+  background: var(--webmcp-surface);
+  box-shadow: 0 12px 36px #0002;
   color: var(--webmcp-text);
   font: 13px/1.4 var(--webmcp-font);
-  backdrop-filter: blur(16px);
 }
 
 .webmcp-panel__header {
@@ -652,9 +679,9 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border-radius: 11px;
-  color: #4770ec;
-  background: #f0f4ff;
+  border-radius: 9px;
+  color: var(--webmcp-blue);
+  background: var(--webmcp-blue-bg);
 }
 
 .webmcp-panel__mark svg,
@@ -670,7 +697,7 @@
 }
 
 .webmcp-panel__header small {
-  color: #8a9099;
+  color: var(--webmcp-muted);
   font-size: 12px;
 }
 
@@ -680,7 +707,7 @@
   height: 28px;
   border-radius: 14px;
   background: transparent;
-  color: #7b818b;
+  color: var(--webmcp-muted);
   font-size: 20px;
   line-height: 24px;
 }
@@ -695,9 +722,9 @@
   min-width: 0;
   gap: 8px;
   margin: 0 3px 8px;
-  padding: 9px 11px;
-  border-radius: 11px;
-  background: #f7f8fa;
+  padding: 10px 11px;
+  border-radius: 9px;
+  background: var(--webmcp-soft);
 }
 
 .webmcp-connection__label {
@@ -721,7 +748,7 @@
 }
 
 .webmcp-connection__label {
-  color: #555b65;
+  color: var(--webmcp-text);
   font-size: 12px;
 }
 
@@ -732,28 +759,22 @@
   margin: 0 3px 10px;
   padding: 10px 11px;
   border-radius: 11px;
-  border: 1px solid rgba(15, 17, 21, .065);
-  background: #fdfdfe;
+  border: 1px solid var(--webmcp-border);
+  background: transparent;
   min-width: 0;
 }
 
 .webmcp-chat-state__icon {
-  width: 18px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  color: #8b929d;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--webmcp-muted);
 }
 
-.webmcp-chat-state__icon svg,
-.webmcp-chat-state__icon img {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
-}
 
 .webmcp-chat-state__icon--ready {
-  color: var(--webmcp-blue);
+  background: var(--webmcp-blue);
 }
 
 .webmcp-chat-state__copy {
@@ -767,15 +788,15 @@
 .webmcp-chat-state__copy strong {
   font-size: 12px;
   font-weight: 550;
-  color: #4b515a;
+  color: var(--webmcp-text);
 }
 
 .webmcp-chat-state__copy small {
   display: block;
   min-width: 0;
   max-width: 100%;
-  color: #9298a2;
-  font-size: 10.5px;
+  color: var(--webmcp-muted);
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -785,12 +806,12 @@
   flex: 0 0 auto;
   min-width: 66px;
   margin-left: auto;
-  border: 1px solid rgba(57, 100, 254, .12);
+  border: 1px solid var(--webmcp-blue-border);
   border-radius: 8px;
   padding: 5px 9px;
-  background: #f1f5ff;
-  color: #4168dc;
-  font-size: 11px;
+  background: var(--webmcp-blue-bg);
+  color: var(--webmcp-blue);
+  font-size: 12px;
   line-height: 1.3;
   font-weight: 550;
   white-space: nowrap;
@@ -800,7 +821,7 @@
 }
 
 .webmcp-reinit:hover {
-  background: #eaf0ff;
+  background: var(--webmcp-hover);
 }
 
 .webmcp-refresh {
@@ -819,7 +840,7 @@
 .webmcp-panel__section {
   margin: 0 4px;
   padding: 11px 4px;
-  border-top: 1px solid rgba(15, 17, 21, .075);
+  border-top: 1px solid var(--webmcp-border);
 }
 
 .webmcp-permissions-section {
@@ -877,11 +898,9 @@
 
 .webmcp-panel__section h4 {
   margin: 0 0 8px;
-  color: #656b75;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: .03em;
-  text-transform: uppercase;
+  color: var(--webmcp-muted);
+  font-size: 12px;
+  font-weight: 550;
 }
 
 .webmcp-field {
@@ -891,7 +910,7 @@
 }
 
 .webmcp-field__label {
-  color: #727883;
+  color: var(--webmcp-muted);
   font-size: 12px;
 }
 
@@ -899,11 +918,11 @@
   width: 100%;
   height: 34px;
   box-sizing: border-box;
-  border: 1px solid rgba(15, 17, 21, .11);
+  border: 1px solid var(--webmcp-border);
   border-radius: 9px;
   outline: none;
   padding: 0 10px;
-  background: #fff;
+  background: var(--webmcp-surface);
   color: var(--webmcp-text);
   font-size: 13px;
 }
@@ -914,7 +933,7 @@
 }
 
 .webmcp-setting-row {
-  min-height: 44px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -933,7 +952,7 @@
 }
 
 .webmcp-setting-copy small {
-  color: #8a9099;
+  color: var(--webmcp-muted);
   font-size: 11px;
 }
 
@@ -954,7 +973,7 @@
   width: 34px;
   height: 20px;
   border-radius: 10px;
-  background: #d8dbe0;
+  background: var(--webmcp-border);
   transition: background .16s ease;
 }
 
@@ -1127,7 +1146,6 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .webmcp-panel,
   .webmcp-card {
     background: #202126;
     color: #f2f3f5;
@@ -1137,14 +1155,14 @@
   .webmcp-chat-state,
   .webmcp-tool-chip,
   .webmcp-input {
-    background: #282a30;
-    color: #f2f3f5;
-    border-color: rgba(255, 255, 255, .10);
+    background: var(--webmcp-soft);
+    color: var(--webmcp-text);
+    border-color: var(--webmcp-border);
   }
   .webmcp-tool-chip span,
   .webmcp-setting-copy strong,
   .webmcp-tool {
-    color: #e7e9ec;
+    color: var(--webmcp-text);
   }
   .webmcp-tool-copy small,
   .webmcp-state,
@@ -1158,4 +1176,27 @@
   .webmcp-card--sent {
     background: transparent;
   }
+}
+
+/* Compact, on-demand callback presentation diagnostics; no transcript data. */
+.webmcp-diagnostics-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px 0;
+}
+.webmcp-diagnostics-row button {
+  font: 500 11px/1.4 var(--webmcp-font);
+  border: 1px solid var(--webmcp-border);
+  border-radius: 8px;
+  background: var(--webmcp-soft);
+  color: var(--webmcp-text);
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.webmcp-diagnostics-status {
+  font: 400 11px/1.4 var(--webmcp-font);
+  color: var(--webmcp-muted);
+  overflow-wrap: anywhere;
 }

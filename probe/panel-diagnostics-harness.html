@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8"><title>MioWeave quick panel callback diagnostics</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<div id="toolbar"><span class="ds-toggle-button">Search</span></div>
+<textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="messages"></div>
+<script>
+(()=>{
+ const values={enabled:true,hideCallbacks:true,autoRunReadOnly:false,autoSendCallbacks:false,callbackDelayMs:1500};
+ window.chrome={runtime:{id:'panel-diagnostics-test',async sendMessage(m){
+  if(m.type==='WEBMCP_CONFIG_GET')return {ok:true,config:{...values,bridgeTokenConfigured:true}};
+  if(m.type==='WEBMCP_CONFIG_SET'){Object.assign(values,m.config);return {ok:true,config:{...values,bridgeTokenConfigured:true}};}
+  if(m.type==='WEBMCP_BRIDGE_CHECK')return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools:[{name:'status',inputSchema:{type:'object',properties:{}}}]};
+  if(m.type==='WEBMCP_CALL')throw Error('Test must not run tools');
+  return {ok:false};
+ }},storage:{local:{async get(){return {};},async set(){}}}};
+ const root=document.querySelector('#messages');
+ const m=document.createElement('div');m.className='ds-message';
+ const body=document.createElement('div');body.className='ds-collapsible-text';
+ const privateMarker='PRIVATE-MARKER-NEVER-IN-DIAGNOSTICS';
+ body.textContent='[[WEBMCP_RESULT]]\n'+JSON.stringify({id:'test_panel_status',tool:'status',ok:true,result:{structuredContent:{kind:'status',note:privateMarker}}})+'\n[[/WEBMCP_RESULT]]';
+ m.append(body);root.append(m);
+ const result={};
+ setTimeout(()=>{
+  const call={id:'test_panel_status',tool:'status',arguments:{}};
+  root.append(createToolCard(call));
+  scanCallbacks();
+  const panel=makePanel(document.querySelector('#toolbar'));
+  const checkbox=panel.querySelector('input[name="hideCallbacks"]');
+  const button=panel.querySelector('.webmcp-diagnostics-row button');
+  result.controlsExist=!!checkbox&&!!button;
+  button.click();
+  result.enabledReport=panel.querySelector('.webmcp-diagnostics-status').textContent;
+  result.noSecretInReport=!result.enabledReport.includes(privateMarker) &&
+    !panel.querySelector('.webmcp-diagnostics-status').title.includes(privateMarker);
+  result.hiddenWhenEnabled=m.classList.contains('webmcp-callback-hidden');
+  checkbox.checked=false;
+  checkbox.dispatchEvent(new Event('change',{bubbles:true}));
+  setTimeout(()=>{
+   button.click();
+   result.disabledReport=panel.querySelector('.webmcp-diagnostics-status').textContent;
+   result.visibleWhenDisabled=!m.classList.contains('webmcp-callback-hidden');
+   document.body.dataset.diagnostics=JSON.stringify(result);
+  },150);
+ },550);
+})();
+</script><script src="../extension/content.js"></script>

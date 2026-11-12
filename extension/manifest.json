@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "MioWeave · Local Tools",
-  "version": "0.0.20",
-  "description": "Weave MioDesk local tools into supported web chats with clear controls and permissions.",
+  "version": "0.0.21",
+  "description": "Weave miodesk local tools into supported web chats with clear controls and permissions.",
   "icons": {
     "16": "icons/mioweave-16.png",
     "48": "icons/mioweave-48.png",
