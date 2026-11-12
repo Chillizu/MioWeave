@@ -1,0 +1,51 @@
+<!doctype html><meta charset="utf-8"><title>MioWeave host theme and readable inline states</title>
+<link rel="stylesheet" href="../extension/styles.css">
+<style>*{box-sizing:border-box}body{margin:0;padding:16px;font:14px/1.5 system-ui;background:#fff;color:#222}.dark{background:#191a1c;color:#eceef2}.composer{background:#f3f4f6;padding:12px}.dark .composer{background:#212327}textarea{display:block}#messages{max-width:780px}.ds-message{margin:14px 0}</style>
+<div class="composer"><div><div class="ds-toggle-button">Search</div></div><textarea placeholder="Message DeepSeek"></textarea><div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div></div>
+<div id="messages"><div class="ds-message"><div class="ds-markdown">[[WEBMCP_CALL]]{"id":"theme_read","tool":"read","arguments":{"path":"文档/视觉验证.md"}}[[/WEBMCP_CALL]]</div></div><div class="ds-message"><div class="ds-markdown">[[WEBMCP_CALL]]{"id":"theme_error","tool":"read","arguments":{"path":"blocked.md"}}[[/WEBMCP_CALL]]</div></div><div class="ds-message"><div class="ds-markdown">[[WEBMCP_CALL]]{"id":"theme_unknown","tool":"exec_command","arguments":{"cmd":"never executed"}}[[/WEBMCP_CALL]]</div></div></div>
+<script>
+const themeMemory={};
+window.chrome={runtime:{id:'theme-scope-test',async sendMessage(message){
+ if(message.type==='WEBMCP_CONFIG_GET')return {ok:true,config:{enabled:true,autoRunReadOnly:false,autoSendCallbacks:false,localToolLabel:'miodesk'}};
+ if(message.type==='WEBMCP_BRIDGE_CHECK')return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools:[{name:'read',annotations:{readOnlyHint:true}},{name:'exec_command',annotations:{readOnlyHint:false}}]};
+ if(message.type==='WEBMCP_CALL')throw Error('Visual regression must not invoke a local tool');
+ if(message.type==='WEBMCP_RECOVERY_LOAD')return {ok:true,records:{}};
+ return {ok:true};
+}},storage:{local:{async get(key){return {[key]:themeMemory[key]}},async set(value){Object.assign(themeMemory,value)}}}};
+</script><script src="../extension/content.js"></script><script>
+function themeRGB(color){return color.match(/[\d.]+/g).slice(0,3).map(Number)}
+function themeLum(color){const c=themeRGB(color).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4});return c[0]*.2126+c[1]*.7152+c[2]*.0722}
+function themeContrast(fg,bg){const values=[themeLum(fg),themeLum(bg)].sort((a,b)=>a-b);return (values[1]+.05)/(values[0]+.05)}
+function themeResult(dark){
+ const cards=[...document.querySelectorAll('.webmcp-card')];
+ const read=cards[0],error=cards[1],unknown=cards[2];
+ const sampled=[read.querySelector('.webmcp-tool'),read.querySelector('.webmcp-tool-provider'),read.querySelector('.webmcp-state'),read.querySelector('.webmcp-args'),read.querySelector('.webmcp-run'),error.querySelector('.webmcp-result')];
+ const contrasts=sampled.map(node=>{let background=node;while(background.parentElement&&getComputedStyle(background).backgroundColor==='rgba(0, 0, 0, 0)')background=background.parentElement;return themeContrast(getComputedStyle(node).color,getComputedStyle(background).backgroundColor)});
+ const name=unknown.querySelector('.webmcp-tool-copy').getBoundingClientRect(),status=unknown.querySelector('.webmcp-state').getBoundingClientRect();
+ const overlap=Math.min(name.right,status.right)-Math.max(name.left,status.left)>1&&Math.min(name.bottom,status.bottom)-Math.max(name.top,status.top)>1;
+ const panel=document.querySelector('.webmcp-panel').getBoundingClientRect();
+ return {dark,cardDark:themeLum(getComputedStyle(read).backgroundColor)<.2,buttonDark:themeLum(getComputedStyle(read.querySelector('.webmcp-run')).backgroundColor)<.2,panelDark:themeLum(getComputedStyle(document.querySelector('.webmcp-panel')).backgroundColor)<.2,errorDistinct:getComputedStyle(error).backgroundColor!==getComputedStyle(read).backgroundColor,minContrast:Math.min(...contrasts),overlap,overflow:document.documentElement.scrollWidth>innerWidth,panelInViewport:panel.top>=0&&panel.bottom<=innerHeight&&panel.left>=0&&panel.right<=innerWidth};
+}
+setTimeout(async()=>{
+ try{
+  const error=document.querySelector('[data-webmcp-id="theme_error"]');applyResultToCard(error,{ok:false,error:'Permission denied: visual fixture'});
+  const unknown=document.querySelector('[data-webmcp-id="theme_unknown"]');const meta=callMetas.get('theme_unknown');callStates.set('theme_unknown',{...meta,phase:'running',payload:null});restoreCardState(unknown,'theme_unknown');
+  await openSettingsPanel(document.querySelector('.webmcp-settings-trigger'));
+  const before=themeResult(false);
+  document.body.classList.add('dark');
+  // A microtask checkpoint, not the 40ms streaming debounce or a paint, must
+  // update every extension surface without a white-background transition.
+  await Promise.resolve();await Promise.resolve();
+  const dark=themeResult(true);
+  document.body.classList.remove('dark');await Promise.resolve();await Promise.resolve();
+  const after=themeResult(false);
+  const prompt=approvalPrompt({id:'theme_approval',tool:'write',arguments:{path:'visual-only.txt',contents:'visual-only-content/'.repeat(250)}});
+  const dialog=document.querySelector('.webmcp-approval-dialog').getBoundingClientRect();
+  const cancel=document.querySelector('.webmcp-approval-actions button');
+  const button=cancel.getBoundingClientRect();
+  const approvalInViewport=dialog.top>=0&&dialog.bottom<=innerHeight&&button.top>=0&&button.bottom<=innerHeight;
+  cancel.click();await prompt;
+  document.body.dataset.themeScope=JSON.stringify({systemDark:matchMedia('(prefers-color-scheme:dark)').matches,states:[before,dark,after],approvalInViewport});
+ }catch(error){document.body.dataset.themeScope=JSON.stringify({error:String(error)})}
+},350);
+</script>

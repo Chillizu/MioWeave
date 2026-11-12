@@ -56,6 +56,11 @@ If `curl http://127.0.0.1:8790/health` succeeds but MioWeave shows offline, veri
 
 The popup follows the current DeepSeek chat's appearance. The standalone settings page has its own system/light/dark preference.
 
+Inline cards, buttons, warnings and approval dialogs share the host theme even
+when it differs from the OS. Theme changes synchronize before paint without a
+bright card-background transition. Long statuses wrap on narrow screens, and
+popovers/dialogs stay within centered-composer and short-window viewports.
+
 - **全局授权 / Global authorization** persists across chats and reloads; enabling it requires typing `ENABLE`.
 - **临时授权 / Temporary authorization** applies only to the current chat and expires when the chat changes or the page reloads.
 - Both full-tool grants can allow commands and file modification/deletion **without per-call confirmation**. Only grant them when you trust the instructions and content reaching the chat. They do not change the Bridge's read-only/full mode.
@@ -97,6 +102,12 @@ npm test
 ```
 
 `npm test` runs syntax checks, Bridge authentication/origin/size-limit regressions, and callback recovery/DOM fixtures. The tests use mocked MCP operations and isolated headless Chromium/Chrome profiles; they do **not** execute real local tools or contact DeepSeek. Recovery must be journaled before privileged dispatch or callback submission; storage failures fail closed, and uncertain submissions are not automatically replayed.
+
+The theme regression fixture also checks both OS preferences, immediate host
+theme changes, text contrast of at least 4.5:1, narrow status geometry and bounded
+overlays. Visual audit screenshots and browser artifacts remain local and are
+not included in the repository or release assets. Signed-in DeepSeek testing
+is performed separately by the user.
 
 No npm install is required for the runtime bridge (uses Node.js built-ins). Linux/macOS helper scripts are supplied; other systems can set `WEBMCP_BRIDGE_TOKEN` in their environment and run `node bridge/server.mjs`.
 

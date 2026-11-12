@@ -7,6 +7,9 @@
   --webmcp-border: light-dark(#e3e6ec, #3c414b);
   --webmcp-soft: light-dark(#f3f5f8, #292c33);
   --webmcp-danger: light-dark(#bd4141, #f29b9b);
+  --webmcp-danger-bg: light-dark(#fff5f5, #302326);
+  --webmcp-danger-border: light-dark(#edcaca, #734343);
+  --webmcp-success: light-dark(#39734e, #93c6a0);
   --webmcp-surface: light-dark(#ffffff, #212327);
   --webmcp-page: light-dark(#f8f9fb, #17181c);
   --webmcp-hover: light-dark(#e9edf3, #333741);
@@ -17,10 +20,15 @@
   --webmcp-font: quote-cjk-patch, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
 }
 
+.webmcp-controls,
+.webmcp-call-view,
+.webmcp-call-warning,
+.webmcp-batch-actions,
+.webmcp-text-projection,
 .webmcp-panel,
 .webmcp-card,
 .webmcp-approval-layer {
-  color-scheme: light dark;
+  color-scheme: var(--webmcp-host-scheme, light dark);
 }
 
 .webmcp-panel [hidden] {
@@ -56,13 +64,13 @@
   border-radius: 15px;
   padding: 0 9px;
   background: transparent;
-  color: #777e89;
+  color: var(--webmcp-muted);
   font: 500 12px/1 var(--webmcp-font);
   cursor: pointer;
 }
 
 .webmcp-reload-page:hover {
-  background: rgba(15, 17, 21, .055);
+  background: var(--webmcp-hover);
   color: var(--webmcp-text);
 }
 
@@ -99,7 +107,7 @@
 }
 
 .webmcp-toggle:not(.ds-toggle-button--selected) {
-  color: #4b5563 !important;
+  color: var(--webmcp-text) !important;
   background: transparent !important;
   border-color: transparent !important;
 }
@@ -125,7 +133,7 @@
 }
 
 .webmcp-toggle__icon {
-  color: #6175e7;
+  color: var(--webmcp-blue);
 }
 .webmcp-quick-footer {
   display: flex;
@@ -193,17 +201,17 @@
   justify-content: space-between;
   gap: 12px;
   padding: 8px 3px;
-  color: #9198a3;
+  color: var(--webmcp-muted);
   font: 11px/1.4 var(--webmcp-font);
 }
 
 .webmcp-batch-actions button {
   flex: 0 0 auto;
   padding: 5px 9px;
-  border: 1px solid #cfd9f5;
-  background: #f2f5ff;
+  border: 1px solid var(--webmcp-blue-border);
+  background: var(--webmcp-blue-bg);
   border-radius: 7px;
-  color: #4266cf;
+  color: var(--webmcp-blue);
   font: 500 11px/1.3 var(--webmcp-font);
   cursor: pointer;
 }
@@ -233,36 +241,37 @@
 .webmcp-call-warning {
   display: flex;
   align-items: flex-start;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
   margin: 7px 0;
   padding: 9px 11px;
-  border-left: 2px solid #b97a37;
+  border-left: 2px solid var(--webmcp-warning);
   border-radius: 6px;
-  background: #fff7ed;
-  color: #855b31;
+  background: var(--webmcp-warning-bg);
+  color: var(--webmcp-warning);
   font: 12px/1.5 var(--webmcp-font);
 }
 
 .webmcp-call-warning__detail {
-  flex: 1;
+  flex: 1 1 200px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .webmcp-call-warning__repair {
   flex: 0 0 auto;
-  border: 1px solid #dec2a5;
+  border: 1px solid var(--webmcp-warning-border);
   border-radius: 6px;
   padding: 4px 8px;
-  background: #fff;
-  color: #8a6033;
+  background: var(--webmcp-surface);
+  color: var(--webmcp-warning);
   font: 11px/1.3 var(--webmcp-font);
   cursor: pointer;
 }
 
 .webmcp-call-warning__repair:focus-visible {
-  outline: 2px solid #b97a37;
+  outline: 2px solid var(--webmcp-warning);
   outline-offset: 2px;
 }
 
@@ -289,24 +298,24 @@
 .webmcp-card {
   margin: 7px 0 6px;
   padding: 10px 12px;
-  border: 1px solid rgba(15, 17, 21, .085);
+  border: 1px solid var(--webmcp-border);
   border-radius: 10px;
-  background: #fbfbfc;
+  background: var(--webmcp-surface);
   color: var(--webmcp-text);
   font: 12.5px/1.4 var(--webmcp-font);
   box-sizing: border-box;
-  transition: border-color .16s ease, background .16s ease, padding .16s ease;
+  transition: padding .16s ease;
 }
 
 .webmcp-card--running,
 .webmcp-card--continuing {
   border-color: var(--webmcp-blue-border);
-  background: #fbfdff;
+  background: var(--webmcp-surface);
 }
 
 .webmcp-card--failed {
-  border-color: rgba(217, 74, 74, .24);
-  background: rgba(217, 74, 74, .025);
+  border-color: var(--webmcp-danger-border);
+  background: var(--webmcp-danger-bg);
 }
 
 .webmcp-card--sent {
@@ -319,6 +328,7 @@
 
 .webmcp-card__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-height: 22px;
@@ -326,13 +336,15 @@
 
 .webmcp-tool-copy {
   min-width: 0;
+  flex: 1 1 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 7px;
 }
 
 .webmcp-tool-copy small {
-  color: #9aa0a9;
+  color: var(--webmcp-muted);
   font-size: 10.5px;
   white-space: nowrap;
 }
@@ -348,22 +360,34 @@
 
 .webmcp-state {
   margin-left: auto;
-  color: #9298a2;
+  max-width: 100%;
+  color: var(--webmcp-muted);
   font-size: 11px;
-  white-space: nowrap;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .webmcp-card--done .webmcp-state,
 .webmcp-card--sent .webmcp-state {
-  color: #6e8a74;
+  color: var(--webmcp-success);
 }
 
 .webmcp-card--failed .webmcp-state {
   color: var(--webmcp-danger);
 }
 
+.webmcp-card[data-webmcp-phase="submitted"] .webmcp-state,
+.webmcp-card[data-webmcp-phase="continuing"] .webmcp-state,
+.webmcp-card[data-webmcp-phase="unknown"] .webmcp-state {
+  color: var(--webmcp-warning);
+}
+
+.webmcp-card[data-webmcp-phase="collision"] .webmcp-state {
+  color: var(--webmcp-danger);
+}
+
 .webmcp-tool {
-  color: #414750;
+  color: var(--webmcp-text);
   font: 600 12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -373,8 +397,8 @@
   max-width: calc(100% - 25px);
   box-sizing: border-box;
   border-radius: 6px;
-  background: rgba(15, 17, 21, .04);
-  color: #707680;
+  background: var(--webmcp-soft);
+  color: var(--webmcp-muted);
   font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: nowrap;
   overflow: hidden;
@@ -389,12 +413,13 @@
 
 .webmcp-result {
   margin: 5px 0 0 25px;
-  color: #858b95;
+  color: var(--webmcp-muted);
   font-size: 11.5px;
+  overflow-wrap: anywhere;
 }
 
 .webmcp-card--failed .webmcp-result {
-  color: #a05a5a;
+  color: var(--webmcp-danger);
 }
 
 .webmcp-actions {
@@ -423,8 +448,8 @@
   border: 1px solid var(--webmcp-border);
   border-radius: 7px;
   padding: 4px 9px;
-  background: #fff;
-  color: #5f6570;
+  background: var(--webmcp-surface);
+  color: var(--webmcp-text);
   font-size: 11.5px;
 }
 
@@ -458,6 +483,9 @@
 
 .webmcp-approval-dialog {
   width: min(480px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  box-sizing: border-box;
   padding: 22px;
   border-radius: 16px;
   background: var(--webmcp-surface);
@@ -864,7 +892,7 @@
   list-style: none;
   cursor: pointer;
   user-select: none;
-  color: #69717d;
+  color: var(--webmcp-muted);
   font-size: 11px;
   font-weight: 650;
   line-height: 1.6;
@@ -875,7 +903,7 @@
 }
 
 .webmcp-panel__section summary > small {
-  color: #9aa1ac;
+  color: var(--webmcp-muted);
   font-size: 10px;
   font-weight: 450;
 }
@@ -883,7 +911,7 @@
 .webmcp-panel__section summary::after {
   content: "⌄";
   font-size: 14px;
-  color: #949ba4;
+  color: var(--webmcp-muted);
 }
 
 .webmcp-panel__section[open] summary::after {
@@ -1009,7 +1037,7 @@
 
 .webmcp-section-title > span {
   margin-bottom: 8px;
-  color: #a0a5ad;
+  color: var(--webmcp-muted);
   font-size: 11px;
 }
 
@@ -1025,23 +1053,23 @@
   gap: 5px;
   min-height: 25px;
   padding: 0 8px;
-  border: 1px solid rgba(15, 17, 21, .08);
+  border: 1px solid var(--webmcp-border);
   border-radius: 8px;
-  background: #fafafa;
+  background: var(--webmcp-surface);
 }
 
 .webmcp-tool-chip span {
-  color: #42464d;
+  color: var(--webmcp-text);
   font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .webmcp-tool-chip small {
-  color: #9ca1aa;
+  color: var(--webmcp-muted);
   font-size: 10px;
 }
 
 .webmcp-tools-empty {
-  color: #8a9099;
+  color: var(--webmcp-muted);
   font-size: 12px;
 }
 
@@ -1056,7 +1084,7 @@
 .webmcp-init-note {
   min-width: 0;
   flex: 1 1 auto;
-  color: #969ca5;
+  color: var(--webmcp-muted);
   font-size: 10.5px;
   line-height: 1.4;
 }
@@ -1079,7 +1107,7 @@
 
 .webmcp-primary {
   margin-left: auto;
-  background: var(--webmcp-blue);
+  background: var(--webmcp-solid);
   color: #fff;
 }
 
@@ -1088,12 +1116,12 @@
 }
 
 .webmcp-secondary {
-  background: #f3f4f6;
-  color: #5f6570;
+  background: var(--webmcp-soft);
+  color: var(--webmcp-text);
 }
 
 .webmcp-secondary:hover {
-  background: #ebeef2;
+  background: var(--webmcp-hover);
   color: var(--webmcp-text);
 }
 
@@ -1132,7 +1160,7 @@
 }
 
 .webmcp-callback-projection::after {
-  color: #9298a2;
+  color: var(--webmcp-muted);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -1145,38 +1173,6 @@
   max-width: min(560px, 70vw);
 }
 
-@media (prefers-color-scheme: dark) {
-  .webmcp-card {
-    background: #202126;
-    color: #f2f3f5;
-    border-color: rgba(255, 255, 255, .10);
-  }
-  .webmcp-connection,
-  .webmcp-chat-state,
-  .webmcp-tool-chip,
-  .webmcp-input {
-    background: var(--webmcp-soft);
-    color: var(--webmcp-text);
-    border-color: var(--webmcp-border);
-  }
-  .webmcp-tool-chip span,
-  .webmcp-setting-copy strong,
-  .webmcp-tool {
-    color: var(--webmcp-text);
-  }
-  .webmcp-tool-copy small,
-  .webmcp-state,
-  .webmcp-result {
-    color: #9ba2ad;
-  }
-  .webmcp-args {
-    background: rgba(255, 255, 255, .055);
-    color: #d6d9de;
-  }
-  .webmcp-card--sent {
-    background: transparent;
-  }
-}
 
 /* Compact, on-demand callback presentation diagnostics; no transcript data. */
 .webmcp-diagnostics-row {

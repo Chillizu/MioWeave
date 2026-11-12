@@ -40,6 +40,7 @@ const state = {
 };
 
 let runtimeObserver = null;
+const hostThemeAncestors = new Set([document.documentElement, document.body]);
 
 function extensionContextAlive() {
   try {
@@ -1059,7 +1060,7 @@ function approvalPrompt(call) {
   return new Promise(resolve => {
     const layer = document.createElement("div");
     layer.className = "webmcp-approval-layer";
-    applyHostTheme(layer);
+    applyHostTheme();
     layer.setAttribute("role", "presentation");
     const dialog = document.createElement("div");
     dialog.className = "webmcp-approval-dialog";
@@ -2375,7 +2376,12 @@ function installObserver() {
       return;
     }
 
+    let hostThemeChanged = false;
     for (const record of records) {
+      if (record.type === "attributes") {
+        if (hostThemeAncestors.has(record.target)) hostThemeChanged = true;
+        continue;
+      }
       if (record.type === "characterData") {
         pendingMutationNodes.add(record.target);
         const parent = record.target.parentElement;
@@ -2416,6 +2422,8 @@ function installObserver() {
       }
     }
 
+    // Apply host palette changes in this microtask, before the next paint.
+    if (hostThemeChanged) applyHostTheme();
     if (pendingMutationNodes.size || controlsCheckNeeded) scheduleMutationFlush();
     queueIdentitySync();
   });
@@ -2423,12 +2431,15 @@ function installObserver() {
   runtimeObserver.observe(document.documentElement, {
     subtree:true,
     childList:true,
-    characterData:true
+    characterData:true,
+    attributes:true,
+    attributeFilter:["class", "style", "data-theme", "data-color-mode"]
   });
 
   // Initial restore plus a few delayed reconciles cover DeepSeek's staged
   // history hydration. Live virtual-list changes set userProtocolReconcileNeeded
   // and are handled in the normal batched mutation flush.
+  applyHostTheme();
   scanCalls();
   scanCallbacks();
   scanInitMessages();
@@ -2532,6 +2543,7 @@ function addControls() {
     parent.appendChild(current);
   }
 
+  applyHostTheme();
   refreshUi();
 }
 
@@ -2593,7 +2605,7 @@ function autoApproveAnyPrompt(chatId) {
   return new Promise(resolve => {
     const layer = document.createElement("div");
     layer.className = "webmcp-approval-layer";
-    applyHostTheme(layer);
+    applyHostTheme();
     const dialog = document.createElement("div");
     dialog.className = "webmcp-approval-dialog webmcp-auto-approval-dialog";
     dialog.setAttribute("role", "dialog");
@@ -2858,20 +2870,29 @@ function callbackDiagnosticsRow() {
   return row;
 }
 
-function applyHostTheme(node) {
-  // The popover is portalled to body, outside DeepSeek's theme scope.
-  // Use the composer's first opaque ancestor instead of private host classes.
+function applyHostTheme() {
+  // Scope the whole extension, including inline cards, to the host rather
+  // than the OS. A namespaced variable never changes DeepSeek's own scheme.
   const trigger = document.querySelector(".webmcp-settings-trigger");
-  for (let parent = trigger?.parentElement; parent; parent = parent.parentElement) {
+  hostThemeAncestors.clear();
+  hostThemeAncestors.add(document.documentElement);
+  hostThemeAncestors.add(document.body);
+  let scheme = "";
+  const origin = trigger?.parentElement || composer()?.parentElement || document.body;
+  for (let parent = origin; parent; parent = parent.parentElement) {
+    hostThemeAncestors.add(parent);
+    if (scheme) continue;
     const background = getComputedStyle(parent).backgroundColor;
     if (!/^rgba?\(/.test(background)) continue;
     const channels = background.match(/[\d.]+/g)?.map(Number);
     if (!channels || channels.length < 3 || (channels.length > 3 && channels[3] < .9)) continue;
     const brightness = channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
-    node.style.colorScheme = brightness < 128 ? "dark" : "light";
-    return;
+    scheme = brightness < 128 ? "dark" : "light";
   }
-  node.style.colorScheme = "light dark";
+  scheme ||= "light dark";
+  if (document.documentElement.style.getPropertyValue("--webmcp-host-scheme") !== scheme) {
+    document.documentElement.style.setProperty("--webmcp-host-scheme", scheme);
+  }
 }
 
 function makePanel(trigger) {
@@ -2943,12 +2964,17 @@ function makePanel(trigger) {
 function positionPanel(trigger) {
   const panel = document.querySelector(".webmcp-panel");
   if (!panel || !trigger) return;
-  applyHostTheme(panel);
+  applyHostTheme();
   const rect = trigger.getBoundingClientRect();
   const width = Math.min(368, window.innerWidth - 24);
   const left = Math.min(window.innerWidth - width - 12, Math.max(12, rect.right - width));
   panel.style.left = `${left}px`;
-  panel.style.bottom = `${Math.max(16, window.innerHeight - rect.top + 10)}px`;
+  const height = panel.getBoundingClientRect().height;
+  const maxTop = Math.max(12, window.innerHeight - height - 12);
+  const preferredTop = rect.top >= height + 10
+    ? rect.top - height - 10
+    : rect.bottom + 10;
+  panel.style.top = `${Math.max(12, Math.min(preferredTop, maxTop))}px`;
 }
 
 function renderPanelState() {
@@ -3085,6 +3111,7 @@ document.addEventListener("pointerdown", onDocumentPointer, true);
 document.addEventListener("click", interceptSend, true);
 document.addEventListener("keydown", interceptSend, true);
 window.addEventListener("resize", onWindowResize);
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyHostTheme);
 
 bootState();
 
