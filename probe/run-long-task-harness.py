@@ -224,6 +224,33 @@ def run_journal_first_case(port):
         print("[PASS] write-ahead tool/callback journal, failures fail closed, crash no-resend")
 
 
+def run_theme_scope_cases(port):
+    for system_dark in (False, True):
+        for width, height in ((390, 844), (640, 360)):
+            with tempfile.TemporaryDirectory(prefix="mioweave-theme-scope-") as profile:
+                cmd = [BROWSER, "--headless=new", "--no-sandbox", "--disable-gpu",
+                       "--disable-dev-shm-usage", f"--user-data-dir={profile}",
+                       f"--window-size={width},{height}", "--virtual-time-budget=2000",
+                       "--dump-dom",
+                       f"http://127.0.0.1:{port}/probe/theme-scope-harness.html"]
+                if system_dark:
+                    cmd.insert(1, "--force-dark-mode")
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
+                assert result.returncode == 0, result.stderr[-1200:]
+                parser = BodyParser()
+                parser.feed(result.stdout)
+                assert "data-theme-scope" in parser.attrs, result.stdout[-1600:]
+                report = json.loads(html.unescape(parser.attrs["data-theme-scope"]))
+                assert "error" not in report, report
+                assert report["systemDark"] == system_dark, report
+                assert report["approvalInViewport"], report
+                for state in report["states"]:
+                    assert state["cardDark"] == state["buttonDark"] == state["panelDark"] == state["dark"], state
+                    assert state["errorDistinct"] and state["minContrast"] >= 4.5, state
+                    assert state["panelInViewport"] and not state["overlap"] and not state["overflow"], state
+    print("[PASS] host/OS theme independence, same-frame theme changes, contrast, narrow labels and bounded overlays")
+
+
 def main():
     assert BROWSER, "Chromium/Google Chrome executable not found"
     with HTTPServer(("127.0.0.1", 0), Handler) as server:
@@ -237,6 +264,7 @@ def main():
         run_unknown_callback_case(server.server_address[1])
         run_panel_diagnostics_case(server.server_address[1])
         run_journal_first_case(server.server_address[1])
+        run_theme_scope_cases(server.server_address[1])
     print("[PASS] no real local MCP calls, no user conversation modified")
 
 
