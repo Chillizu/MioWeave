@@ -1,0 +1,182 @@
+<!doctype html><meta charset="utf-8"><title>MioWeave write-ahead recovery barrier</title>
+<base href="/probe/">
+<link rel="stylesheet" href="../extension/styles.css">
+<div class="ds-toggle-button">Search</div>
+<textarea placeholder="Message DeepSeek"></textarea>
+<div role="button" class="ds-button ds-button--primary ds-button--circle">Send</div>
+<div id="messages"></div>
+<script>
+(()=>{
+ history.replaceState(null,'','/a/chat/s/write-ahead-fixture');
+ const recovery={};
+ const acknowledgements=new Set();
+ const dispatched=[];
+ const events=[];
+ let sendClicks=0;
+ document.querySelector('.ds-button--primary').addEventListener('click',()=>{sendClicks++;});
+ const tools=[{name:'edit',inputSchema:{type:'object',properties:{path:{type:'string'}}}}];
+ window.fixture={recovery,acknowledgements,dispatched,events};
+ window.chrome={runtime:{id:'journal-first-fixture',async sendMessage(message){
+   if(message.type==='WEBMCP_CONFIG_GET')return {ok:true,config:{enabled:true,approvalMode:'always',autoRunReadOnly:false,autoSendCallbacks:false,hideCallbacks:true}};
+   if(message.type==='WEBMCP_BRIDGE_CHECK')return {ok:true,connected:true,authorized:true,tokenConfigured:true,tools};
+   if(message.type==='WEBMCP_RECOVERY_LOAD')return {ok:true,records:{...recovery}};
+   if(message.type==='WEBMCP_RECOVERY_SAVE'){
+    if(message.callId==='callback_fail' && message.record.phase==='continuing')return {ok:false};
+   if(message.callId==='edit_draft' && message.record.phase==='continuing') {
+    return new Promise(resolve=>setTimeout(()=>{
+      recovery[message.callId]={...message.record,at:Date.now()};
+      resolve({ok:true});
+    },230));
+   }
+    if(message.record.phase==='running'){
+     events.push('write-start:'+message.callId);
+     return new Promise(resolve=>setTimeout(()=>{
+      if(message.callId==='edit_fail')return resolve({ok:false});
+      acknowledgements.add(message.callId);
+      events.push('write-ack:'+message.callId);
+      recovery[message.callId]={...message.record,at:Date.now()};
+      resolve({ok:true});
+     },230));
+    }
+    recovery[message.callId]={...message.record,at:Date.now()};
+    return {ok:true};
+   }
+   if(message.type==='WEBMCP_CALL'){
+    dispatched.push({tool:message.tool,acknowledged:acknowledgements.has(message.arguments.idHint)});
+    events.push('bridge-call:'+message.arguments.idHint);
+    return {ok:true,result:{structuredContent:{modified:1}}};
+   }
+   return {ok:false};
+ }},storage:{local:{async get(){return {}},async set(){}}}};
+ const root=document.querySelector('#messages');
+ const card=(id)=>{
+  const call={id,tool:'edit',arguments:{path:'safe-fixture-only',idHint:id}};
+  const c=createToolCard(call);
+  root.append(c);
+  return {call,c};
+ };
+ window.result={};
+ setTimeout(async()=>{
+  const failed=card('edit_fail');
+  const denied=executeCall(failed.call,failed.c);
+  const accepted=card('edit_delayed');
+  const allowed=executeCall(accepted.call,accepted.c);
+  await new Promise(resolve=>setTimeout(resolve,90));
+  result.beforeAck={count:dispatched.length,events:[...events]};
+  await Promise.all([denied,allowed]);
+  result.afterAck={count:dispatched.length,events:[...events],
+    acknowledged:dispatched.every(x=>x.acknowledged),
+    refused:failed.c.querySelector('.webmcp-state').textContent,
+    failedSaved:Boolean(recovery.edit_fail),successfulSaved:recovery.edit_delayed?.phase,
+    success:accepted.c.querySelector('.webmcp-state').textContent};
+
+  // Do not click DeepSeek Send if the continuing journal transition fails.
+  // The textarea may contain a callback, but the browser has not received a
+  // durable acknowledgment that it is safe to begin submitting it.
+  const failedCallback=card('callback_fail');
+  const testPayload={ok:true,result:{structuredContent:{modified:1}}};
+  document.querySelector('textarea').value=resultText(failedCallback.call,testPayload);
+  const attempted=await sendPreparedCallback(failedCallback.call,failedCallback.c,testPayload);
+  result.continuingFailure={sent:attempted,clicks:sendClicks,
+    state:failedCallback.c.querySelector('.webmcp-state').textContent};
+  document.querySelector('textarea').value='';
+
+  // Editing the user's draft while the pending journal ack is in flight
+  // must not submit the newly typed text or erase the user's work.
+  const draftCall=card('edit_draft');
+  document.querySelector('textarea').value=resultText(draftCall.call,testPayload);
+  const draftAttempt=sendPreparedCallback(draftCall.call,draftCall.c,testPayload);
+  setTimeout(()=>{document.querySelector('textarea').value='User-owned draft';},60);
+  const draftAccepted=await draftAttempt;
+  result.changedDraft={sent:draftAccepted,clicks:sendClicks,
+    preserved:document.querySelector('textarea').value==='User-owned draft',
+    journalPhase:recovery.edit_draft?.phase,
+    label:draftCall.c.querySelector('.webmcp-state').textContent};
+  document.querySelector('textarea').value='';
+
+  // The browser closed after clicking Continue but before it could observe
+  // a callback: reload must recover as "check receipt", not auto-resend.
+  const ambiguous=card('edit_continuing');
+  recovery.edit_continuing={tool:'edit',argsHash:hashText(JSON.stringify(ambiguous.call.arguments)),
+    phase:'continuing',payload:{ok:true,result:{structuredContent:{modified:1}}},at:Date.now()};
+  callStates.clear();
+  await loadRecoveryState();
+  restoreCardState(ambiguous.c,ambiguous.call.id);
+  result.recovery={phase:ambiguous.c.dataset.webmcpPhase,
+    label:ambiguous.c.querySelector('.webmcp-state').textContent,
+    action:ambiguous.c.querySelector('.webmcp-run').textContent,
+    count:dispatched.length};
+  ambiguous.c.querySelector('.webmcp-run').click();
+  await new Promise(resolve=>setTimeout(resolve,100));
+  result.recovery.afterClick=dispatched.length;
+
+  // Batch recovery: if the sole combined callback might already have
+  // been sent, pressing Check receipt must NOT replay the batch or callback.
+  const members=['batch_edit_a','batch_edit_b'].map(id=>({
+    id,tool:'edit',arguments:{path:'safe-fixture-only',idHint:id}}));
+  const batchId='batch_'+hashText(members.map(c=>c.id).join('|'));
+  for(const call of members){
+    recovery[call.id]={tool:call.tool,argsHash:hashText(JSON.stringify(call.arguments)),
+      phase:'result-ready',payload:{ok:true,result:{structuredContent:{modified:1}}},at:Date.now()};
+  }
+  recovery[batchId]={tool:'webmcp.batch',argsHash:hashText(JSON.stringify({})),
+    phase:'continuing',payload:{ok:true,result:{calls:members.map(c=>({id:c.id,tool:c.tool,ok:true,result:{modified:1}}))}},at:Date.now()};
+  callStates.clear();
+  await loadRecoveryState();
+  const assistant=document.createElement('div');assistant.className='ds-message';
+  const markdown=document.createElement('div');markdown.className='ds-markdown';
+  markdown.textContent=members.map(c=>'[[WEBMCP_CALL]]'+JSON.stringify(c)+'[[/WEBMCP_CALL]]').join('\n');
+  assistant.append(markdown);root.append(assistant);
+  const parsed=parseCalls(markdown.textContent);
+  makeBatchCards(parsed.calls,markdown,{allowAutoRun:false});
+  const batchButton=markdown.nextElementSibling.querySelector('.webmcp-batch-actions button');
+  result.batchBefore={calls:dispatched.length,clicks:sendClicks,button:batchButton.textContent};
+  batchButton.click();
+  await new Promise(resolve=>setTimeout(resolve,100));
+  result.batchAfter={calls:dispatched.length,clicks:sendClicks,button:batchButton.textContent};
+
+  // A model that reuses a prior ID with different arguments must not
+  // inherit the older result or trigger another privileged invocation.
+  const usedId='edit_delayed';
+  const reusedCall={id:usedId,tool:'edit',arguments:{path:'changed-untrusted-path',idHint:usedId}};
+  const reusedCard=createToolCard(reusedCall);
+  root.append(reusedCard);
+  const beforeDuplicate=dispatched.length;
+  await executeCall(reusedCall,reusedCard);
+  result.idCollision={phase:reusedCard.dataset.webmcpPhase,
+    disabled:reusedCard.querySelector('.webmcp-run').disabled,
+    noExtraCalls:dispatched.length===beforeDuplicate};
+
+  // It must also reject a changed ID/argument binding after rehydrating an
+  // earlier durable journal entry in a fresh content-script state.
+  callMetas.delete(usedId);
+  callStates.clear();
+  await loadRecoveryState();
+  const rehydrated=createToolCard(reusedCall);
+  root.append(rehydrated);
+  restoreCardState(rehydrated,usedId);
+  result.idMismatchOnReload={phase:rehydrated.dataset.webmcpPhase,
+    disabled:rehydrated.querySelector('.webmcp-run').disabled};
+
+  // An unsaved chat has no stable journal key. Block privileged dispatch.
+  history.replaceState(null,'','/');
+  const unscoped=card('edit_unscoped');
+  await executeCall(unscoped.call,unscoped.c);
+  result.noChat={count:dispatched.length,
+    label:unscoped.c.querySelector('.webmcp-state').textContent};
+
+  // Navigation last: real chat identity synchronization clears the active
+  // call metadata for the previous chat, as intended.
+  history.replaceState(null,'','/a/chat/s/write-ahead-fixture');
+  await new Promise(resolve=>setTimeout(resolve,100));
+  const moved=card('edit_navigation');
+  const countBeforeNavigation=dispatched.length;
+  const moving=executeCall(moved.call,moved.c);
+  setTimeout(()=>history.replaceState(null,'','/a/chat/s/another-chat'),60);
+  await moving;
+  result.navigated={before:countBeforeNavigation,count:dispatched.length,
+    label:moved.c.querySelector('.webmcp-state').textContent};
+  document.body.dataset.journalFirst=JSON.stringify(result);
+ },200);
+})();
+</script><script src="../extension/content.js"></script>

@@ -1,65 +1,64 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MioWeave · Settings</title><link rel="stylesheet" href="options.css"></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark"><title>MioWeave · 设置</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="options.css"></head>
 <body>
 <div class="shell">
   <aside class="sidebar">
-    <div class="brand"><img src="icons/mioweave-logo.png" alt="" width="60" height="60"><div><strong>MioWeave</strong><small>Local tools · Web chats</small></div></div>
-    <nav aria-label="Settings navigation">
-      <a href="#overview">Overview</a><a href="#permissions">Permissions</a><a href="#connection">Connection</a>
-      <a href="#behavior">Behavior</a><a href="#tools">Available tools</a><a href="#diagnostics">Diagnostics</a>
+    <div class="brand"><img src="icons/mioweave-logo.png" alt="" width="36" height="36"><div><strong>MioWeave</strong><small>DeepSeek 本地工具</small></div></div>
+    <nav aria-label="设置导航">
+      <a href="#overview">概览</a><a href="#permissions">授权</a><a href="#connection">连接</a>
+      <a href="#behavior">行为</a><a href="#tools">工具</a><a href="#diagnostics">诊断</a>
     </nav>
-    <div class="sidebar-foot"><span class="version" id="version"></span><p>Designed for explicit, inspectable local tool access.</p></div>
+    <div class="sidebar-foot"><span class="version" id="version"></span></div>
   </aside>
   <main>
-    <header class="page-header"><div class="eyebrow">EXTENSION SETTINGS</div><h1>Make the web feel local.</h1><p>Connect a web chat to MioDesk, manage access, and control how local tool results return.</p></header>
+    <header class="page-header"><div><h1>设置</h1><p>管理 DeepSeek 的本地工具连接与授权。</p></div><label class="theme-choice"><span>主题</span><select id="settings-theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label></header>
     <section class="panel" id="overview">
-      <div class="section-head"><div><h2>Overview</h2><p>Current connection and effective permission policy.</p></div><button class="button subtle" id="refresh" type="button">Refresh status</button></div>
+      <div class="section-head"><h2>概览</h2><button class="button subtle" id="refresh" type="button">刷新状态</button></div>
       <div class="summary-grid">
-        <div class="summary"><span class="micro">BRIDGE</span><strong id="connection-status">Checking…</strong><small id="connection-detail">Waiting for diagnostics</small></div>
-        <div class="summary"><span class="micro">TOOLS</span><strong id="tool-count">—</strong><small id="tool-detail">MioDesk local tools</small></div>
-        <div class="summary"><span class="micro">GLOBAL POLICY</span><strong id="policy-status">Ask each time</strong><small id="policy-detail">Privileged commands need approval</small></div>
+        <div class="summary"><span class="micro">本地连接</span><strong id="connection-status">检查中</strong><small id="connection-detail">正在读取 Bridge 状态</small></div>
+        <div class="summary"><span class="micro">工具</span><strong id="tool-count">—</strong><small id="tool-detail">由 Bridge 提供</small></div>
+        <div class="summary"><span class="micro">全局授权</span><strong id="policy-status">逐次确认</strong><small id="policy-detail">高权限操作需确认</small></div>
       </div>
-      <p class="support">This extension's global policy applies to new and existing chats. Temporary per-chat approval lives only in that tab and is not saved here.</p>
     </section>
     <section class="panel" id="permissions">
-      <div class="section-head"><div><h2>Permissions</h2><p>Choose the global rule for privileged local commands and file modifications.</p></div></div>
-      <div class="policy-choices" role="radiogroup" aria-label="Global privileged tool policy">
-        <label class="policy-item"><input type="radio" name="policy" value="ask"><span><strong>Ask each time</strong><small>Default. Confirm each privileged tool call, or temporarily approve one chat.</small></span><span class="pill">Recommended</span></label>
-        <label class="policy-item"><input type="radio" name="policy" value="always"><span><strong>Always auto-approve · global YOLO</strong><small>All authorized DeepSeek conversations may run commands and change files without individual confirmation.</small></span><span class="danger-pill">Elevated</span></label>
-        <label class="policy-item"><input type="radio" name="policy" value="block"><span><strong>Block privileged tools</strong><small>Read-only tools continue working, but exec, write, edit, delete and other privileged tools cannot run.</small></span></label>
+      <div class="section-head"><div><h2>授权</h2><p>全局规则适用于所有聊天；聊天内的临时授权会在切换或刷新后失效。</p></div></div>
+      <div class="policy-choices" role="radiogroup" aria-label="全局高权限工具规则">
+        <label class="policy-item"><input type="radio" name="policy" value="ask"><span><strong>逐次确认</strong><small>执行命令、修改或删除文件前确认；也可临时允许当前聊天。</small></span><span class="pill">推荐</span></label>
+        <label class="policy-item"><input type="radio" name="policy" value="always"><span><strong>全局自动批准</strong><small>已授权的聊天可直接执行命令、修改或删除文件，刷新与重启后仍有效。</small></span><span class="danger-pill">高风险</span></label>
+        <label class="policy-item"><input type="radio" name="policy" value="block"><span><strong>禁止高权限工具</strong><small>禁止命令执行与文件修改，仅允许 status、list、read、search。</small></span></label>
       </div>
-      <div class="risk" id="policy-risk" hidden><strong>Global automatic access is high risk.</strong><p>Untrusted chat content and model mistakes may trigger local commands, file edits or deletions. The bridge is not an OS sandbox. Type <code>ENABLE</code> to confirm you want this to persist across chat changes and browser restarts.</p><input id="policy-confirm" autocomplete="off" spellcheck="false" aria-label="Type ENABLE to confirm global auto-approval" placeholder="Type ENABLE"></div>
-      <div class="actions"><button id="save-policy" class="button primary" type="button">Save global policy</button><span id="policy-message" class="feedback" role="status" aria-live="polite"></span></div>
+      <div class="risk" id="policy-risk" hidden><strong>允许持续的高权限操作</strong><p>不可信内容或模型错误可能触发命令、修改或删除文件。Bridge 不提供操作系统隔离。输入 <code>ENABLE</code> 确认对所有聊天持续生效。</p><input id="policy-confirm" autocomplete="off" spellcheck="false" aria-label="输入 ENABLE 确认全局自动批准" placeholder="输入 ENABLE"></div>
+      <div class="actions"><button id="save-policy" class="button primary" type="button">保存授权规则</button><span id="policy-message" class="feedback" role="status" aria-live="polite"></span></div>
     </section>
     <section class="panel" id="connection">
-      <div class="section-head"><div><h2>Connection</h2><p>Configure your local companion endpoint and identity label.</p></div></div>
-      <label class="field">Bridge URL<input id="bridge-url" type="url" value="http://127.0.0.1:8790" spellcheck="false"></label>
-      <label class="field">Bridge token<input id="bridge-token" type="password" autocomplete="new-password" placeholder="Leave empty to keep the existing token"></label>
-      <p class="field-hint" id="token-state">A saved token is never shown in this page.</p>
-      <label class="field">Tool provider label<input id="tool-label" type="text" maxlength="32" placeholder="MioDesk"></label>
-      <div class="actions"><button id="save-connection" type="button" class="button primary">Save connection</button><span id="connection-message" class="feedback" role="status" aria-live="polite"></span></div>
+      <div class="section-head"><h2>连接</h2></div>
+      <label class="field">Bridge 地址<input id="bridge-url" type="url" value="http://127.0.0.1:8790" spellcheck="false"></label>
+      <label class="field">Bridge Token<input id="bridge-token" type="password" autocomplete="new-password" placeholder="留空不修改"></label>
+      <p class="field-hint" id="token-state">不会回显已保存的 Token。</p>
+      <label class="field">工具来源名称<input id="tool-label" type="text" maxlength="32" placeholder="例如：miodesk"></label>
+      <div class="actions"><button id="save-connection" type="button" class="button primary">保存连接</button><span id="connection-message" class="feedback" role="status" aria-live="polite"></span></div>
     </section>
     <section class="panel" id="behavior">
-      <div class="section-head"><div><h2>Behavior</h2><p>How the web chat recognizes tools and receives results.</p></div></div>
-      <label class="setting"><span><strong>Enable integration</strong><small>Show and use local tools in supported web chats.</small></span><input type="checkbox" id="enabled"></label>
-      <label class="setting"><span><strong>Auto-run read-only tools</strong><small>status, list, read and search do not need per-call confirmation.</small></span><input type="checkbox" id="auto-read"></label>
-      <label class="setting"><span><strong>Auto-send tool results</strong><small>Automatically continue the chat after tools finish.</small></span><input type="checkbox" id="auto-send"></label>
-      <label class="setting"><span><strong>Hide callback transport</strong><small>Keep low-level WebMCP result messages out of chat history.</small></span><input type="checkbox" id="hide-callbacks"></label>
-      <label class="field spaced">Callback spacing<select id="callback-delay">
-        <option value="0">Instant</option><option value="500">0.5 seconds</option><option value="1000">1 second</option>
-        <option value="1500">1.5 seconds (default)</option><option value="3000">3 seconds</option><option value="5000">5 seconds</option><option value="10000">10 seconds</option>
-      </select></label><p class="field-hint">Minimum time before automatically sending a callback. Multiple tool calls in one reply share one callback.</p>
-      <div class="actions"><button class="button primary" id="save-behavior" type="button">Save behavior</button><span id="behavior-message" class="feedback" role="status" aria-live="polite"></span></div>
+      <div class="section-head"><h2>行为</h2></div>
+      <label class="setting"><span><strong>启用本地工具</strong><small>在 DeepSeek 中显示并使用工具。</small></span><input type="checkbox" id="enabled"></label>
+      <label class="setting"><span><strong>自动运行只读工具</strong><small>自动执行 status、list、read、search。</small></span><input type="checkbox" id="auto-read"></label>
+      <label class="setting"><span><strong>自动回传结果</strong><small>工具执行结束后自动发送结果，继续对话。</small></span><input type="checkbox" id="auto-send"></label>
+      <label class="setting"><span><strong>折叠工具回传</strong><small>隐藏原始传输消息，保留执行结果。</small></span><input type="checkbox" id="hide-callbacks"></label>
+      <label class="field spaced">回传间隔<select id="callback-delay">
+        <option value="0">立即</option><option value="500">0.5 秒</option><option value="1000">1 秒</option>
+        <option value="1500">1.5 秒</option><option value="3000">3 秒</option><option value="5000">5 秒</option><option value="10000">10 秒</option>
+      </select></label><p class="field-hint">自动发送前的最短等待时间；多工具共用一次结果回传。</p>
+      <div class="actions"><button class="button primary" id="save-behavior" type="button">保存行为设置</button><span id="behavior-message" class="feedback" role="status" aria-live="polite"></span></div>
     </section>
-    <section class="panel" id="tools">
-      <div class="section-head"><div><h2>Available tools</h2><p>Live schemas from MioDesk. Actual access is also bounded by the local bridge.</p></div></div>
-      <div id="tools-list" class="tools-list"><p class="support">Refresh status to inspect the local tool inventory.</p></div>
-    </section>
+    <details class="panel expandable" id="tools">
+      <summary class="section-head"><h2>工具</h2><span class="support">参数与权限</span></summary>
+      <div id="tools-list" class="tools-list"><p class="support">连接 Bridge 后可查看工具。</p></div>
+    </details>
     <section class="panel" id="diagnostics">
-      <div class="section-head"><div><h2>Diagnostics</h2><p>Connection health, permission boundaries and troubleshooting.</p></div><button class="button subtle" type="button" id="test-bridge">Test bridge</button></div>
-      <pre id="diagnostics-text" class="diagnostics">Waiting for bridge diagnostics…</pre>
-      <p class="support">The companion listens on a local loopback port and authenticates with a bearer token. A globally auto-approved session does not provide process isolation or prevent prompt injection.</p>
+      <div class="section-head"><h2>诊断</h2><button class="button subtle" type="button" id="test-bridge">检查连接</button></div>
+      <details class="diagnostic-details"><summary>连接详情</summary><pre id="diagnostics-text" class="diagnostics">等待 Bridge 状态…</pre></details>
+      <p class="support">Bridge 仅通过本机地址和 Token 提供访问，不是操作系统沙箱。自动批准不能防止不可信内容触发操作。</p>
     </section>
   </main>
 </div>

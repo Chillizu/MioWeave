@@ -6,12 +6,38 @@ const message = (id, value, error = false) => {
 };
 const send = async value => chrome.runtime.sendMessage(value);
 const version = chrome.runtime.getManifest().version;
-el("version").textContent = "Version " + version;
+el("version").textContent = "v" + version;
 let currentMode = "ask";
+
+const themeSelect = el("settings-theme");
+try {
+  const saved = localStorage.getItem("mioweave-options-theme");
+  if (["system", "light", "dark"].includes(saved)) themeSelect.value = saved;
+} catch { /* Theme storage is optional. */ }
+function applyTheme() {
+  document.documentElement.style.colorScheme = themeSelect.value === "system" ? "light dark" : themeSelect.value;
+}
+applyTheme();
+themeSelect.addEventListener("change", () => {
+  applyTheme();
+  try { localStorage.setItem("mioweave-options-theme", themeSelect.value); } catch { /* This page only. */ }
+});
+
+function revealSection() {
+  const id = location.hash.slice(1) || "overview";
+  const target = el(id);
+  if (target instanceof HTMLDetailsElement) target.open = true;
+  for (const link of document.querySelectorAll(".sidebar nav a")) {
+    if (link.hash === "#" + id) link.setAttribute("aria-current", "location");
+    else link.removeAttribute("aria-current");
+  }
+}
+window.addEventListener("hashchange", revealSection);
+revealSection();
 
 async function reloadConfig() {
   const result = await send({type:"WEBMCP_CONFIG_GET"});
-  if (!result?.ok) throw new Error(result?.error || "Could not read settings");
+  if (!result?.ok) throw new Error(result?.error || "无法读取扩展设置");
   const c = result.config;
   currentMode = c.approvalMode || "ask";
   const radio = document.querySelector('input[name="policy"][value="' + currentMode + '"]');
@@ -19,8 +45,8 @@ async function reloadConfig() {
   el("bridge-url").value = c.bridgeUrl || "http://127.0.0.1:8790";
   el("tool-label").value = c.localToolLabel || "MioDesk";
   el("token-state").textContent = c.bridgeTokenConfigured
-    ? "Token configured. Leave this field empty to keep it; the stored secret is never displayed here."
-    : "No token configured. The bridge requires a token to authorize local tools.";
+    ? "已配置，留空不修改；不会回显已保存的值。"
+    : "尚未配置，请填写与 Bridge 一致的 Token。";
   el("enabled").checked = c.enabled !== false;
   el("auto-read").checked = Boolean(c.autoRunReadOnly);
   el("auto-send").checked = c.autoSendCallbacks !== false;
@@ -34,11 +60,11 @@ function updatePolicy() {
   const chosen = document.querySelector('input[name="policy"]:checked')?.value || currentMode;
   el("policy-risk").hidden = chosen !== "always" || currentMode === "always";
   el("policy-status").textContent =
-    currentMode === "always" ? "Auto-approve" :
-      currentMode === "block" ? "Blocked" : "Ask each time";
+    currentMode === "always" ? "自动批准" :
+      currentMode === "block" ? "禁止高权限" : "逐次确认";
   el("policy-detail").textContent =
-    currentMode === "always" ? "All authorized chats · persistent" :
-      currentMode === "block" ? "Privileged tools unavailable" : "Confirm or grant per-chat access";
+    currentMode === "always" ? "所有已授权聊天 · 持续保存" :
+      currentMode === "block" ? "仅允许只读工具" : "可临时允许当前聊天";
 }
 for (const radio of document.querySelectorAll('input[name="policy"]')) {
   radio.addEventListener("change", updatePolicy);
@@ -49,27 +75,27 @@ el("save-policy").addEventListener("click", async event => {
   const mode = document.querySelector('input[name="policy"]:checked')?.value;
   if (mode === "always" && currentMode !== "always" &&
       el("policy-confirm").value.trim() !== "ENABLE") {
-    message("policy-message", "Type ENABLE to explicitly authorize global automatic local tool execution.", true);
+    message("policy-message", "输入 ENABLE 后才能启用全局自动批准。", true);
     return;
   }
   const response = await send({type:"WEBMCP_GLOBAL_POLICY_SET",mode});
   if (!response?.ok) {
-    message("policy-message", response?.error || "Could not save global policy", true);
+    message("policy-message", response?.error || "授权规则保存失败", true);
     return;
   }
   currentMode = mode;
   el("policy-confirm").value = "";
   updatePolicy();
   message("policy-message", mode === "always"
-    ? "Global auto-approval is active. Review this choice regularly."
-    : "Global policy saved.");
+    ? "全局自动批准已启用。"
+    : "授权规则已保存。");
 });
 
 el("save-connection").addEventListener("click", async () => {
   const address = el("bridge-url").value.trim();
   if (!/^http:\/\/127\.0\.0\.1(?::\d+)?\/?$/.test(address) &&
       !/^http:\/\/localhost(?::\d+)?\/?$/.test(address)) {
-    message("connection-message", "Use a loopback HTTP address such as http://127.0.0.1:8790.", true);
+    message("connection-message", "请输入本机 HTTP 地址，例如 http://127.0.0.1:8790。", true);
     return;
   }
   const patch = {
@@ -79,11 +105,11 @@ el("save-connection").addEventListener("click", async () => {
   if (el("bridge-token").value) patch.bridgeToken = el("bridge-token").value;
   const response = await send({type:"WEBMCP_CONFIG_SET",config:patch});
   if (!response?.ok) {
-    message("connection-message", response?.error || "Connection settings could not be saved", true);
+    message("connection-message", response?.error || "连接设置保存失败", true);
     return;
   }
   el("bridge-token").value = "";
-  message("connection-message", "Connection settings saved.");
+  message("connection-message", "连接已保存。");
   await refreshHealth();
 });
 
@@ -95,25 +121,25 @@ el("save-behavior").addEventListener("click", async () => {
     hideCallbacks:el("hide-callbacks").checked,
     callbackDelayMs:Number(el("callback-delay").value)
   }});
-  message("behavior-message", response?.ok ? "Behavior settings saved." :
-    (response?.error || "Unable to save behavior settings."), !response?.ok);
+  message("behavior-message", response?.ok ? "行为设置已保存。" :
+    (response?.error || "行为设置保存失败。"), !response?.ok);
 });
 
 async function refreshHealth() {
   const r = await send({type:"WEBMCP_BRIDGE_CHECK"});
   const okay = Boolean(r?.authorized);
-  el("connection-status").textContent = okay ? "Connected" : r?.connected ? "Needs authorization" : "Offline";
-  el("connection-detail").textContent = okay ? "Local companion authorized" :
-    r?.error || (r?.tokenConfigured ? "Token rejected" : "Bridge token not configured");
+  el("connection-status").textContent = okay ? "已连接" : r?.connected ? "待授权" : "未连接";
+  el("connection-detail").textContent = okay ? "Bridge 授权正常" :
+    !r?.connected ? "检查 Bridge 是否启动" : r?.tokenConfigured ? "检查 Token 是否一致" : "请配置 Bridge Token";
   const tools = Array.isArray(r?.tools) ? r.tools : [];
   el("tool-count").textContent = String(tools.length);
-  el("tool-detail").textContent = "Exposed by the local bridge";
+  el("tool-detail").textContent = "由 Bridge 提供";
   const list = el("tools-list");
   list.replaceChildren();
   if (!tools.length) {
     const empty = document.createElement("p");
     empty.className = "support";
-    empty.textContent = "No tool schemas available. Connect the bridge and refresh.";
+    empty.textContent = "暂无可用工具，请连接 Bridge 后刷新。";
     list.append(empty);
   }
   for (const tool of tools) {
@@ -123,10 +149,10 @@ async function refreshHealth() {
     const strong = document.createElement("strong");
     strong.textContent = tool.name || "unknown";
     const access = document.createElement("small");
-    access.textContent = ["status","list","read","search"].includes(tool.name) ? "Read only" : "Privileged";
+    access.textContent = ["status","list","read","search"].includes(tool.name) ? "只读" : "需授权";
     title.append(strong,access);
     const desc = document.createElement("p");
-    desc.textContent = tool.description || "No description supplied";
+    desc.textContent = tool.description || "未提供说明";
     const schema = document.createElement("pre");
     schema.textContent = JSON.stringify(tool.inputSchema || {},null,2);
     node.append(title,desc,schema);
@@ -134,7 +160,7 @@ async function refreshHealth() {
   }
   const summary = {
     bridge:r?.health?.bridge || "MioWeave local bridge",
-    endpoint:r?.health?.mcp || "(not reachable)",
+    endpoint:r?.health?.mcp || "(不可用)",
     connected:Boolean(r?.connected),
     authorized:okay,
     tokenConfigured:Boolean(r?.tokenConfigured),
